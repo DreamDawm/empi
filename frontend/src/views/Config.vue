@@ -86,6 +86,31 @@
         <el-button type="primary" @click="confirmAddField">确定</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="showEditDialog" title="编辑字段" width="400px">
+      <el-form>
+        <el-form-item label="数据库字段">
+          <el-select v-model="editFieldData.field_name" placeholder="请选择字段">
+            <el-option
+              v-for="field in availableFields"
+              :key="field"
+              :label="field"
+              :value="field"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="显示名称">
+          <el-input v-model="editFieldData.display_name" placeholder="请输入显示名称" />
+        </el-form-item>
+        <el-form-item label="权重">
+          <el-input-number v-model="editFieldData.weight" :min="0" :max="100" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showEditDialog = false">取消</el-button>
+        <el-button type="primary" @click="confirmEditField">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -101,6 +126,9 @@ const pollInterval = ref(2)
 const availableFields = ref([])
 const showAddDialog = ref(false)
 const newField = ref({ field_name: '', display_name: '', weight: 0 })
+const showEditDialog = ref(false)
+const editFieldData = ref({ field_name: '', display_name: '', weight: 0 })
+const editingIndex = ref(-1)
 
 const totalWeight = computed(() => {
   return weights.value.reduce((sum, item) => sum + (item.weight || 0), 0)
@@ -148,7 +176,22 @@ const removeField = (index) => {
 }
 
 const editField = (index) => {
-  ElMessage.info('编辑功能待实现')
+  editingIndex.value = index
+  editFieldData.value = { ...weights.value[index] }
+  showEditDialog.value = true
+}
+
+const confirmEditField = () => {
+  if (!editFieldData.value.field_name) {
+    ElMessage.warning('请选择字段')
+    return
+  }
+  if (!editFieldData.value.display_name) {
+    ElMessage.warning('请输入显示名称')
+    return
+  }
+  weights.value[editingIndex.value] = { ...editFieldData.value }
+  showEditDialog.value = false
 }
 
 const saveWeights = async () => {
