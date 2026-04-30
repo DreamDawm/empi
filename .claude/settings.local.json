@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from app.services.inverted_index import InvertedIndexService; print\\('Import successful'\\)\")",
+      "Bash(python -m py_compile /d/python_pro/empi/backend/app/services/inverted_index.py)",
+      "Bash(docker-compose build *)",
+      "Bash(docker-compose up *)",
+      "Bash(docker-compose ps *)",
+      "Bash(curl -s http://localhost:8000/api/health)",
+      "Bash(curl -s http://localhost:8000/)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(curl *)",
+      "Bash(docker-compose logs *)",
+      "Bash(docker-compose down *)",
+      "Bash(mysql *)",
+      "Bash(pip install *)",
+      "Bash(python seed_data.py)",
+      "Bash(docker cp *)",
+      "Bash(docker exec *)",
+      "Bash(docker-compose restart *)"
+    ]
+  }
+}
