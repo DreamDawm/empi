@@ -13,7 +13,7 @@ class SimilarityCalculator:
             decode_responses=True
         )
 
-    def calculate(self, patient_a: Dict[str, Any], patient_b: Dict[str, Any], weights: Dict[str, float]) -> float:
+    def calculate(self, patient_a: Dict[str, Any], patient_b: Dict[str, Any], weights: Any) -> float:
         """计算两个患者之间的相似度"""
         cache_key = self._get_cache_key(patient_a, patient_b)
         cached = self.redis_client.get(cache_key)
@@ -23,12 +23,23 @@ class SimilarityCalculator:
         scores = {}
         total_weight = 0
 
-        for field, weight in weights.items():
-            if weight <= 0:
-                continue
-            total_weight += weight
-            score = self._calculate_field_similarity(field, patient_a, patient_b)
-            scores[field] = score * weight
+        # Handle both old dict format {'field': weight} and new list format [{'field_name': 'x', 'weight': y}]
+        if isinstance(weights, dict):
+            for field, weight in weights.items():
+                if weight <= 0:
+                    continue
+                total_weight += weight
+                score = self._calculate_field_similarity(field, patient_a, patient_b)
+                scores[field] = score * weight
+        elif isinstance(weights, list):
+            for item in weights:
+                field_name = item.get('field_name', '')
+                weight = item.get('weight', 0)
+                if weight <= 0:
+                    continue
+                total_weight += weight
+                score = self._calculate_field_similarity(item, patient_a, patient_b)
+                scores[field_name] = score * weight
 
         if total_weight == 0:
             final_score = 0
@@ -38,17 +49,27 @@ class SimilarityCalculator:
         self.redis_client.setex(cache_key, 3600, str(final_score))
         return final_score
 
-    def _calculate_field_similarity(self, field: str, patient_a: Dict[str, Any], patient_b: Dict[str, Any]) -> float:
+    def _calculate_field_similarity(self, field: Any, patient_a: Dict[str, Any], patient_b: Dict[str, Any]) -> float:
         """计算单个字段的相似度"""
+        # Handle both string field names and dict with field_name key
+        if isinstance(field, dict):
+            field_name = field.get('field_name', '')
+        else:
+            field_name = field
+
         methods = {
             'identity_card': self._similarity_identity_card,
+            'identity_card_num': self._similarity_identity_card,
             'name': self._similarity_name,
+            'person_name': self._similarity_name,
             'birthday': self._similarity_birthday,
             'gender': self._similarity_gender,
             'phone': self._similarity_phone,
             'address': self._similarity_address,
+            'location': self._similarity_address,
         }
-        method = methods.get(field, lambda a, b: 0.0)
+
+        method = methods.get(field_name, lambda a, b: 0.0)
         return method(patient_a, patient_b)
 
     def _similarity_identity_card(self, patient_a: Dict[str, Any], patient_b: Dict[str, Any]) -> float:
