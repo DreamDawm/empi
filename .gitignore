@@ -1,1 +1,13 @@
 /.claude/
+CLAUDE.md
+docs
+backend/__pycache__/
+backend/app/__pycache__/
+backend/app/api/__pycache__/
+backend/app/services/__pycache__/
+frontend/node_modules/
+frontend/dist/
+*.pyc
+.DS_Store
+*.local
+.playwright-mcp/

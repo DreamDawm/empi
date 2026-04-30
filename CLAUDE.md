@@ -43,6 +43,11 @@ empi/
 
 ## 关键规则
 
+### 测试规则
+- 调试浏览器功能时，优先使用 `playwright-cli` skill
+- 其次使用插件中的 `playwright`
+- 不使用 `python -m playwright install chromium` 命令
+
 ### 合并规则
 - 相似度 ≥ 自动合并阈值（默认85分）：自动合并
 - 相似度 < 待审核显示阈值（默认60分）：不显示在待审核列表
