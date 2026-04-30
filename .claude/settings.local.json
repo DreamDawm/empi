@@ -33,7 +33,10 @@
       "mcp__plugin_playwright_playwright__browser_run_code",
       "mcp__plugin_playwright_playwright__browser_close",
       "Bash(npm run *)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(git reset *)",
+      "Bash(git checkout *)",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot"
     ]
   }
 }

@@ -34,8 +34,9 @@ export const mergeApi = {
 export const statsApi = {
   get: () => api.get('/api/stats'),
   getTrend: (days) => api.get('/api/stats/trend', { params: { days } }),
-  triggerClean: () => api.post('/api/stats/trigger-clean'),
-  triggerFullClean: () => api.post('/api/stats/trigger-full-clean')
+  // Use async endpoints to avoid timeout - returns immediately while clean runs in background
+  triggerClean: () => api.post('/api/stats/trigger-clean-async'),
+  triggerFullClean: () => api.post('/api/stats/trigger-full-clean-async')
 }
 
 export default api

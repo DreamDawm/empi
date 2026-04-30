@@ -98,12 +98,14 @@ onMounted(async () => {
 const handleClean = async () => {
   try {
     cleaning.value = true
+    ElMessage.warning('清洗开始...')
     const res = await statsApi.triggerClean()
     ElMessage.success(res.data.message || '清洗完成')
     const statsRes = await statsApi.get()
     stats.value = statsRes.data
   } catch (error) {
-    ElMessage.error('清洗失败')
+    console.error('清洗失败:', error)
+    ElMessage.error('清洗失败，请重试')
   } finally {
     cleaning.value = false
   }
@@ -117,14 +119,17 @@ const handleFullClean = async () => {
       { type: 'warning' }
     )
     fullCleaning.value = true
+    ElMessage.warning('全量清洗中，请稍候...')
     const res = await statsApi.triggerFullClean()
     ElMessage.success(res.data.message || '全量清洗完成')
     const statsRes = await statsApi.get()
     stats.value = statsRes.data
   } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('全量清洗失败')
+    if (error === 'cancel') {
+      return
     }
+    console.error('全量清洗失败:', error)
+    ElMessage.error('全量清洗失败，请重试')
   } finally {
     fullCleaning.value = false
   }
