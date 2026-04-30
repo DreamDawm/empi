@@ -4,6 +4,7 @@ from sqlalchemy import func, text
 from app.api.deps import get_db
 from app.models import EmpiMaster, EmpiMergeLog, EmpiPendingReview, EmpiProcessLog
 from app.services.etl import etl_scheduler
+from app.services.config_service import config_service
 from typing import Dict, Any
 from datetime import datetime, timedelta
 
@@ -13,7 +14,13 @@ router = APIRouter(prefix="/api/stats", tags=["stats"])
 def get_stats(db: Session = Depends(get_db)) -> Dict[str, Any]:
     total = db.query(EmpiMaster).count()
     merged = db.query(EmpiMaster).filter(EmpiMaster.status == 'MERGED').count()
-    pending = db.query(EmpiPendingReview).filter(EmpiPendingReview.status == 'PENDING').count()
+
+    # Get pending threshold and filter candidates accordingly
+    pending_threshold = config_service.get_pending_threshold(db)
+    pending = db.query(EmpiPendingReview).filter(
+        EmpiPendingReview.status == 'PENDING',
+        EmpiPendingReview.similarity_score >= pending_threshold
+    ).count()
 
     return {
         "total": total,
