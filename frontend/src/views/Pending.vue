@@ -34,21 +34,28 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { mergeApi } from '../api'
+import { mergeApi, configApi } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const candidates = ref([])
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
+const pendingThreshold = ref(60)
 
-onMounted(() => {
+onMounted(async () => {
+  try {
+    const res = await configApi.getPendingThreshold()
+    pendingThreshold.value = res.data.threshold || 60
+  } catch (error) {
+    console.error('获取待审核阈值失败', error)
+  }
   loadCandidates()
 })
 
 const loadCandidates = async () => {
   try {
-    const res = await mergeApi.listCandidates(page.value, pageSize.value)
+    const res = await mergeApi.listCandidates(page.value, pageSize.value, pendingThreshold.value)
     candidates.value = res.data.data || []
     total.value = res.data.total || 0
   } catch (error) {

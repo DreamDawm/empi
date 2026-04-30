@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 from app.api.deps import get_db
-from app.models import EmpiMaster, EmpiMergeLog, EmpiPendingReview
+from app.models import EmpiMaster, EmpiMergeLog, EmpiPendingReview, EmpiProcessLog
+from app.services.etl import etl_scheduler
 from typing import Dict, Any
 from datetime import datetime, timedelta
 
@@ -41,3 +42,29 @@ def get_trend(days: int = 7, db: Session = Depends(get_db)) -> Dict[str, Any]:
         current = next_day
 
     return {"data": daily_stats}
+
+@router.post("/trigger-clean")
+def trigger_clean(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """触发增量清洗（基于最后更新时间）"""
+    try:
+        stats = etl_scheduler.poll_and_process(db)
+        return {"message": "清洗完成", "stats": stats}
+    except Exception as e:
+        return {"message": f"清洗失败: {str(e)}", "stats": None}
+
+@router.post("/trigger-full-clean")
+def trigger_full_clean(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """触发全量清洗（清除处理日志后重新处理所有数据）"""
+    try:
+        # 清除处理日志，允许重新处理所有数据
+        db.query(EmpiProcessLog).delete()
+        db.commit()
+
+        # 重置last_update_time（删除Redis键）
+        etl_scheduler.redis_client.delete('etl:last_update_time')
+
+        # 执行全量清洗
+        stats = etl_scheduler.poll_and_process(db)
+        return {"message": "全量清洗完成", "stats": stats}
+    except Exception as e:
+        return {"message": f"全量清洗失败: {str(e)}", "stats": None}

@@ -69,7 +69,11 @@ class SimilarityCalculator:
             'location': self._similarity_address,
         }
 
-        method = methods.get(field_name, lambda a, b: 0.0)
+        if not field_name or field_name not in methods:
+            return 0.0
+        method = methods[field_name]
+        if method is None:
+            return 0.0
         return method(patient_a, patient_b)
 
     def _similarity_identity_card(self, patient_a: Dict[str, Any], patient_b: Dict[str, Any]) -> float:

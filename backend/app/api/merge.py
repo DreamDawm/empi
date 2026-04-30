@@ -10,12 +10,13 @@ from datetime import datetime
 router = APIRouter(prefix="/api/merge", tags=["merge"])
 
 @router.get("/candidates")
-def list_merge_candidates(page: int = 1, page_size: int = 20, db: Session = Depends(get_db)) -> Dict[str, Any]:
+def list_merge_candidates(page: int = 1, page_size: int = 20, min_score: float = 0, db: Session = Depends(get_db)) -> Dict[str, Any]:
     offset = (page - 1) * page_size
-    total = db.query(EmpiPendingReview).filter(EmpiPendingReview.status == 'PENDING').count()
-    candidates = db.query(EmpiPendingReview).filter(
-        EmpiPendingReview.status == 'PENDING'
-    ).offset(offset).limit(page_size).all()
+    query = db.query(EmpiPendingReview).filter(EmpiPendingReview.status == 'PENDING')
+    if min_score > 0:
+        query = query.filter(EmpiPendingReview.similarity_score >= min_score)
+    total = query.count()
+    candidates = query.offset(offset).limit(page_size).all()
 
     result = []
     for c in candidates:

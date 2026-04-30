@@ -37,17 +37,31 @@
       </div>
       <el-empty v-else description="暂无数据" />
     </el-card>
+
+    <el-card style="margin-top: 20px;">
+      <template #header>数据清洗</template>
+      <el-space wrap>
+        <el-button type="primary" :loading="cleaning" @click="handleClean">
+          立刻增量清洗
+        </el-button>
+        <el-button type="warning" :loading="fullCleaning" @click="handleFullClean">
+          立刻全量清洗
+        </el-button>
+      </el-space>
+    </el-card>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { statsApi } from '../api'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const stats = ref({})
 const trendData = ref([])
 const maxCount = ref(1)
+const cleaning = ref(false)
+const fullCleaning = ref(false)
 
 onMounted(async () => {
   try {
@@ -65,6 +79,51 @@ onMounted(async () => {
 
 const getMaxPercentage = (count) => {
   return Math.round((count / maxCount.value) * 100)
+}
+
+const handleClean = async () => {
+  try {
+    cleaning.value = true
+    const res = await statsApi.triggerClean()
+    if (res.data.message) {
+      ElMessage.success(res.data.message)
+    } else {
+      ElMessage.success('清洗完成')
+    }
+    // Refresh stats
+    const statsRes = await statsApi.get()
+    stats.value = statsRes.data
+  } catch (error) {
+    ElMessage.error('清洗失败')
+  } finally {
+    cleaning.value = false
+  }
+}
+
+const handleFullClean = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '全量清洗将重新处理所有数据，确定要继续吗？',
+      '全量清洗确认',
+      { type: 'warning' }
+    )
+    fullCleaning.value = true
+    const res = await statsApi.triggerFullClean()
+    if (res.data.message) {
+      ElMessage.success(res.data.message)
+    } else {
+      ElMessage.success('全量清洗完成')
+    }
+    // Refresh stats
+    const statsRes = await statsApi.get()
+    stats.value = statsRes.data
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('全量清洗失败')
+    }
+  } finally {
+    fullCleaning.value = false
+  }
 }
 </script>
 

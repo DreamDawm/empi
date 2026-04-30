@@ -10,7 +10,6 @@
 - 前端: Vue 3 + Vite + Pinia + Element Plus
 - 数据库: MySQL 8.0
 - 缓存: Redis 7.x
-- 任务调度: APScheduler
 - 部署: Docker + Docker Compose
 
 ## 项目结构
@@ -25,6 +24,7 @@ empi/
 │   │   ├── models/       # 数据模型
 │   │   └── schemas/      # Pydantic schemas
 │   ├── tests/
+│   ├── seed_data.sql     # 模拟数据
 │   └── Dockerfile
 ├── frontend/             # Vue 3 前端
 │   ├── src/
@@ -34,8 +34,6 @@ empi/
 │   │   └── api/          # API 调用
 │   └── Dockerfile
 ├── docs/                 # 文档
-│   └── superpowers/
-│       └── specs/        # 设计文档
 └── docker-compose.yml    # 部署配置
 ```
 
@@ -46,8 +44,9 @@ empi/
 ## 关键规则
 
 ### 合并规则
-- 相似度 ≥ 阈值（默认85分）：自动合并
-- 相似度 < 阈值：进入待审核队列
+- 相似度 ≥ 自动合并阈值（默认85分）：自动合并
+- 相似度 < 待审核显示阈值（默认60分）：不显示在待审核列表
+- 两者之间：进入待审核队列
 
 ### 倒排索引
 - 必填键：姓名拼音 + 性别
@@ -57,3 +56,30 @@ empi/
 - 每条记录处理前检查 empi_process_log
 - 合并操作前检查 empi_merge_log
 - 相似度结果缓存Redis，1小时过期
+
+## ETL配置
+
+- **轮询间隔**：默认2小时，可配置（1-24小时）
+- **立刻清洗**：Dashboard页面的"立刻增量清洗"按钮
+- **全量清洗**：Dashboard页面的"立刻全量清洗"按钮（清除处理日志后重新处理）
+
+## 前端页面
+
+| 页面 | 路径 | 功能 |
+|------|------|------|
+| Dashboard | / | 统计概览、合并趋势、清洗操作 |
+| 待审核 | /pending | 待审核列表，支持阈值过滤 |
+| 已合并 | /merged | 已合并记录 |
+| 患者 | /patients | 患者列表查询 |
+| 配置 | /config | 权重配置、阈值配置、轮询间隔配置 |
+
+## 数据库表
+
+| 表名 | 说明 |
+|------|------|
+| im_patient | 源患者数据表 |
+| empi_master | 主索引表 |
+| empi_pending_review | 待审核队列 |
+| empi_merge_log | 合并日志 |
+| empi_process_log | 处理日志 |
+| empi_config | 配置表 |
