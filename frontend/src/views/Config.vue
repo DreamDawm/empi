@@ -10,6 +10,9 @@
       <el-form label-width="120px">
         <el-form-item v-for="(item, index) in weights" :key="index" :label="item.display_name || item.field_name">
           <el-input-number v-model="item.weight" :min="0" :max="100" />
+          <el-button type="primary" size="small" @click="editField(index)" style="margin-left: 10px;">
+            编辑
+          </el-button>
           <el-button type="danger" size="small" @click="removeField(index)" style="margin-left: 10px;">
             删除
           </el-button>
@@ -142,6 +145,10 @@ const confirmAddField = () => {
 
 const removeField = (index) => {
   weights.value.splice(index, 1)
+}
+
+const editField = (index) => {
+  ElMessage.info('编辑功能待实现')
 }
 
 const saveWeights = async () => {
