@@ -1,18 +1,18 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from typing import Dict, Any
+from typing import Dict, Any, List
 from app.api.deps import get_db
 from app.services.config_service import config_service
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
 @router.get("/weights")
-def get_weights(db: Session = Depends(get_db)) -> Dict[str, float]:
+def get_weights(db: Session = Depends(get_db)) -> List[dict]:
     return config_service.get_weights(db)
 
 @router.put("/weights")
-def update_weights(weights: Dict[str, float], db: Session = Depends(get_db)) -> Dict[str, float]:
+def update_weights(weights: List[dict], db: Session = Depends(get_db)) -> List[dict]:
     return config_service.update_weights(db, weights)
 
 @router.get("/threshold")
