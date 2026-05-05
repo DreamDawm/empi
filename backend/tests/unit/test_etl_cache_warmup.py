@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 
 def test_warm_cache_loads_existing_patients():
-    """Test that warm_cache loads existing processed patients from DB"""
+    """Test that warm_cache loads existing processed patients from DB using atomic rename"""
     from app.services.etl import ETLScheduler
 
     scheduler = ETLScheduler()
@@ -13,16 +13,19 @@ def test_warm_cache_loads_existing_patients():
         MagicMock(patient_id='p2'),
     ]
 
-    with patch.object(scheduler.redis_client, 'delete') as mock_delete:
-        with patch.object(scheduler.redis_client, 'sadd') as mock_sadd:
-            scheduler.warm_processed_cache(mock_db)
+    mock_pipe = MagicMock()
+    with patch.object(scheduler.redis_client, 'pipeline', return_value=mock_pipe) as mock_pipeline:
+        scheduler.warm_processed_cache(mock_db)
 
-    assert mock_delete.called  # Should clear existing key first
-    # sadd is called once with all patient IDs (variadic)
-    mock_sadd.assert_called_once()
-    call_args = mock_sadd.call_args[0]
-    assert call_args[0] == scheduler._processed_patients_key
-    assert set(call_args[1:]) == {'p1', 'p2'}  # All patient IDs passed
+    # Verify pipeline is used with atomic rename pattern
+    mock_pipeline.assert_called_once()
+    assert mock_pipe.delete.called
+    assert mock_pipe.sadd.called
+    assert mock_pipe.rename.called
+    # Verify rename was called with new_key -> processed_patients_key
+    rename_call = mock_pipe.rename.call_args
+    assert rename_call[0][0] == f'{scheduler._processed_patients_key}:new'
+    assert rename_call[0][1] == scheduler._processed_patients_key
 
 
 def test_warm_cache_does_nothing_when_no_patients():

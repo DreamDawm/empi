@@ -94,9 +94,17 @@ class ETLScheduler:
         processed = db.query(EmpiProcessLog.patient_id).distinct().all()
         patient_ids = [p.patient_id for p in processed]
 
-        if patient_ids:
-            self.redis_client.delete(self._processed_patients_key)
-            self.redis_client.sadd(self._processed_patients_key, *patient_ids)
+        if not patient_ids:
+            logging_service.info("没有已处理记录，跳过缓存预热")
+            return
+
+        # Use atomic key rename pattern to avoid race condition
+        new_key = f"{self._processed_patients_key}:new"
+        pipe = self.redis_client.pipeline()
+        pipe.delete(new_key)
+        pipe.sadd(new_key, *patient_ids)
+        pipe.rename(new_key, self._processed_patients_key)  # Atomic operation
+        pipe.execute()
 
         logging_service.info(f"已加载 {len(patient_ids)} 条已处理记录到缓存")
 
