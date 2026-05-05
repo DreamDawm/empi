@@ -95,10 +95,11 @@ class ETLScheduler:
 
     def _is_processed(self, db: Session, patient_id: str) -> bool:
         """Check if patient was already processed using Redis cache"""
-        # Fast path: check Redis set
-        if self.redis_client.sismember(self._processed_patients_key, patient_id):
-            return True
-        # Slow path: check database (in case Redis was cleared)
+        try:
+            if self.redis_client.sismember(self._processed_patients_key, patient_id):
+                return True
+        except redis.RedisError:
+            logging_service.warning("Redis unavailable, falling back to database")
         return self._is_processed_db(db, patient_id)
 
     def _is_processed_db(self, db: Session, patient_id: str) -> bool:
