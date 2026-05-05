@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # Merge threshold
     DEFAULT_MERGE_THRESHOLD: float = 85.0
 
+    # Logging
+    LOG_DIR: str = "logs"
+    LOG_RETENTION_DAYS: int = 7
+
     @property
     def DATABASE_URL(self) -> str:
         return f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}?charset=utf8mb4"
