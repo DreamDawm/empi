@@ -12,3 +12,7 @@ frontend/dist/
 *.local
 .playwright-mcp/
 .idea/
+
+# Logs
+backend/logs/*
+!backend/logs/.gitkeep
