@@ -40,4 +40,5 @@ def setup_logger(name: str) -> logging.Logger:
 
 def get_logger(name: str) -> logging.Logger:
     """获取logger实例"""
-    return logging.getLogger(name) if logging.getLogger(name).handlers else setup_logger(name)
+    logger = logging.getLogger(name)
+    return logger if logger.handlers else setup_logger(name)

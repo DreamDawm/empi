@@ -7,6 +7,7 @@ from app.services.cleaner import DataCleaner
 from app.services.inverted_index import inverted_index_service
 from app.services.similarity import similarity_calculator
 from app.services.merger import decision_engine
+from app.services.logging_service import logging_service
 from app.core.config import settings
 import redis
 import json
@@ -29,8 +30,12 @@ class ETLScheduler:
         if batch_size is None:
             batch_size = settings.ETL_BATCH_SIZE
 
+        logging_service.info(f"开始轮询处理，batch_size={batch_size}")
+
         last_update_time = self._get_last_update_time()
         patients = self._fetch_patients(db, last_update_time, batch_size)
+
+        logging_service.info(f"获取到 {len(patients)} 条待处理记录")
 
         if not patients:
             return {'processed': 0, 'merged': 0, 'pending': 0}
@@ -51,6 +56,8 @@ class ETLScheduler:
             self._process_patient(db, patient, weights, threshold, stats)
 
         self._set_last_update_time(datetime.now())
+
+        logging_service.info(f"本轮处理完成: {stats}")
 
         return stats
 
@@ -137,6 +144,8 @@ class ETLScheduler:
                          weights: Dict[str, float], threshold: float,
                          stats: Dict[str, int]):
         """处理单个患者"""
+        logging_service.info(f"处理患者: {patient['patient_id']}")
+
         inverted_index = inverted_index_service.build_index(patient)
 
         # 提取索引字段值
@@ -203,6 +212,8 @@ class ETLScheduler:
             })
 
         stats['processed'] += 1
+
+        logging_service.info(f"患者 {patient['patient_id']} 处理完成，结果: {stats}")
 
     def _save_process_log(self, db: Session, patient_id: str, process_type: str, details: Dict):
         """保存处理日志"""
