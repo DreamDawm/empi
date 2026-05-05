@@ -53,25 +53,25 @@ def get_trend(days: int = 7, db: Session = Depends(get_db)) -> Dict[str, Any]:
     return {"data": daily_stats}
 
 @router.post("/trigger-clean")
-def trigger_clean(db: Session = Depends(get_db)) -> Dict[str, Any]:
+def trigger_clean(batch_size: int = 1000, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """触发增量清洗（基于最后更新时间）- 同步执行"""
     try:
-        stats = etl_scheduler.poll_and_process(db)
+        stats = etl_scheduler.poll_and_process(db, batch_size=batch_size)
         return {"message": "清洗完成", "stats": stats}
     except Exception as e:
         return {"message": f"清洗失败: {str(e)}", "stats": None}
 
 @router.post("/trigger-clean-async")
-async def trigger_clean_async(background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> Dict[str, Any]:
+async def trigger_clean_async(batch_size: int = 1000, background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """触发增量清洗 - 异步执行（后台任务）"""
     def run_clean():
-        return etl_scheduler.poll_and_process(db)
+        return etl_scheduler.poll_and_process(db, batch_size=batch_size)
 
     background_tasks.add_task(run_clean)
     return {"message": "增量清洗任务已提交后台执行"}
 
 @router.post("/trigger-full-clean")
-def trigger_full_clean(db: Session = Depends(get_db)) -> Dict[str, Any]:
+def trigger_full_clean(batch_size: int = 1000, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """触发全量清洗（同步执行）- 清空4个表后重新处理所有数据"""
     try:
         # 清空所有相关表
@@ -81,17 +81,17 @@ def trigger_full_clean(db: Session = Depends(get_db)) -> Dict[str, Any]:
         db.query(EmpiProcessLog).delete()
         db.commit()
 
-        # 重置last_update_time（删除Redis键）
-        etl_scheduler.redis_client.delete('etl:last_update_time')
+        # 重置游标（删除Redis键）
+        etl_scheduler.redis_client.delete('etl:last_patient_id')
 
         # 执行全量清洗
-        stats = etl_scheduler.poll_and_process(db)
+        stats = etl_scheduler.poll_and_process(db, batch_size=batch_size)
         return {"message": "全量清洗完成", "stats": stats}
     except Exception as e:
         return {"message": f"全量清洗失败: {str(e)}", "stats": None}
 
 @router.post("/trigger-full-clean-async")
-async def trigger_full_clean_async(background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> Dict[str, Any]:
+async def trigger_full_clean_async(batch_size: int = 1000, background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """触发全量清洗 - 异步执行（后台任务）"""
     def run_full_clean():
         db.query(EmpiMaster).delete()
@@ -99,8 +99,8 @@ async def trigger_full_clean_async(background_tasks: BackgroundTasks, db: Sessio
         db.query(EmpiPendingReview).delete()
         db.query(EmpiProcessLog).delete()
         db.commit()
-        etl_scheduler.redis_client.delete('etl:last_update_time')
-        return etl_scheduler.poll_and_process(db)
+        etl_scheduler.redis_client.delete('etl:last_patient_id')
+        return etl_scheduler.poll_and_process(db, batch_size=batch_size)
 
     background_tasks.add_task(run_full_clean)
     return {"message": "全量清洗任务已提交后台执行"}
@@ -119,3 +119,9 @@ async def stream_logs():
             "Connection": "keep-alive",
         }
     )
+
+@router.post("/admin/clear-processed-cache")
+def clear_processed_cache(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """清除已处理患者缓存（用于调试）"""
+    etl_scheduler.redis_client.delete(etl_scheduler._processed_patients_key)
+    return {"message": "缓存已清除"}
