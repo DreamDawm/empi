@@ -24,6 +24,7 @@ class ETLScheduler:
         )
         self.snowflake = get_snowflake_generator()
         self.data_cleaner = DataCleaner()
+        self._processed_patients_key = 'etl:processed_patients'
 
     def poll_and_process(self, db: Session, batch_size: int = None):
         """轮询并处理增量数据"""
@@ -32,8 +33,8 @@ class ETLScheduler:
 
         logging_service.info(f"开始轮询处理，batch_size={batch_size}")
 
-        last_update_time = self._get_last_update_time()
-        patients = self._fetch_patients(db, last_update_time, batch_size)
+        last_patient_id = self._get_last_patient_id()
+        patients = self._fetch_patients(db, last_patient_id, batch_size)
 
         logging_service.info(f"获取到 {len(patients)} 条待处理记录")
 
@@ -55,31 +56,34 @@ class ETLScheduler:
 
             self._process_patient(db, patient, weights, threshold, stats)
 
-        self._set_last_update_time(datetime.now())
+        # 使用 patient_id 作为游标，避免同一时刻多条记录被遗漏
+        last_processed_id = patients[-1]['patient_id']
+        self._set_last_patient_id(last_processed_id)
 
         logging_service.info(f"本轮处理完成: {stats}")
 
         return stats
 
-    def _get_last_update_time(self) -> Optional[datetime]:
-        key = 'etl:last_update_time'
-        value = self.redis_client.get(key)
-        if value:
-            return datetime.fromisoformat(value)
-        return None
+    def _get_last_patient_id(self) -> Optional[str]:
+        """获取上一次处理的最大 patient_id"""
+        key = 'etl:last_patient_id'
+        return self.redis_client.get(key)
 
-    def _set_last_update_time(self, dt: datetime):
-        key = 'etl:last_update_time'
-        self.redis_client.set(key, dt.isoformat())
+    def _set_last_patient_id(self, patient_id: str):
+        """保存上一次处理的最大 patient_id"""
+        key = 'etl:last_patient_id'
+        self.redis_client.set(key, patient_id)
 
-    def _fetch_patients(self, db: Session, last_update_time: Optional[datetime],
+    def _fetch_patients(self, db: Session, last_patient_id: Optional[str],
                        batch_size: int) -> List[Dict[str, Any]]:
-        """从im_patient表获取增量数据"""
-        if last_update_time:
-            query = text("SELECT * FROM im_patient WHERE data_updatetime > :last_update ORDER BY data_updatetime LIMIT :limit")
-            result = db.execute(query.params(last_update=last_update_time, limit=batch_size))
+        """从im_patient表获取增量数据，使用 patient_id 作为游标"""
+        if last_patient_id:
+            # 使用 > 而不是 >= 确保不会重复处理同一批
+            query = text("SELECT * FROM im_patient WHERE patient_id > :last_id ORDER BY patient_id LIMIT :limit")
+            result = db.execute(query.params(last_id=last_patient_id, limit=batch_size))
         else:
-            query = text("SELECT * FROM im_patient ORDER BY data_updatetime LIMIT :limit")
+            # 首次运行，按 patient_id 顺序获取
+            query = text("SELECT * FROM im_patient ORDER BY patient_id LIMIT :limit")
             result = db.execute(query.params(limit=batch_size))
 
         columns = result.keys()
@@ -90,6 +94,15 @@ class ETLScheduler:
         return patients
 
     def _is_processed(self, db: Session, patient_id: str) -> bool:
+        """Check if patient was already processed using Redis cache"""
+        # Fast path: check Redis set
+        if self.redis_client.sismember(self._processed_patients_key, patient_id):
+            return True
+        # Slow path: check database (in case Redis was cleared)
+        return self._is_processed_db(db, patient_id)
+
+    def _is_processed_db(self, db: Session, patient_id: str) -> bool:
+        """Database fallback for processed check"""
         log = db.query(EmpiProcessLog).filter(
             EmpiProcessLog.patient_id == patient_id
         ).first()
