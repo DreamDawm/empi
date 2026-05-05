@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
 from app.api.deps import get_db
 from app.models import EmpiMaster, EmpiMergeLog, EmpiPendingReview, EmpiProcessLog
 from app.services.etl import etl_scheduler
 from app.services.config_service import config_service
+from app.services.logging_service import logging_service
 from typing import Dict, Any
 from datetime import datetime, timedelta
 
@@ -102,3 +104,18 @@ async def trigger_full_clean_async(background_tasks: BackgroundTasks, db: Sessio
 
     background_tasks.add_task(run_full_clean)
     return {"message": "全量清洗任务已提交后台执行"}
+
+@router.get("/logs/stream")
+async def stream_logs():
+    """SSE实时日志流"""
+    async def event_generator():
+        async for log_entry in logging_service.stream_logs():
+            yield log_entry
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
