@@ -35,6 +35,10 @@ class ETLScheduler:
 
         logging_service.info(f"开始轮询处理，batch_size={batch_size}")
 
+        # Warm cache on first call if empty
+        if not self.redis_client.exists(self._processed_patients_key):
+            self.warm_processed_cache(db)
+
         last_patient_id = self._get_last_patient_id()
         patients = self._fetch_patients(db, last_patient_id, batch_size)
 
@@ -83,6 +87,18 @@ class ETLScheduler:
         """保存上一次处理的最大 patient_id"""
         key = 'etl:last_patient_id'
         self.redis_client.set(key, patient_id)
+
+    def warm_processed_cache(self, db: Session):
+        """从数据库加载已处理的患者ID到Redis缓存"""
+        logging_service.info("开始加载已处理患者到缓存...")
+        processed = db.query(EmpiProcessLog.patient_id).distinct().all()
+        patient_ids = [p.patient_id for p in processed]
+
+        if patient_ids:
+            self.redis_client.delete(self._processed_patients_key)
+            self.redis_client.sadd(self._processed_patients_key, *patient_ids)
+
+        logging_service.info(f"已加载 {len(patient_ids)} 条已处理记录到缓存")
 
     def _fetch_patients(self, db: Session, last_patient_id: Optional[str],
                        batch_size: int) -> List[Dict[str, Any]]:
