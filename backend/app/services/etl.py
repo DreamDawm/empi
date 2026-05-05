@@ -230,7 +230,14 @@ class ETLScheduler:
         logging_service.info(f"患者 {patient['patient_id']} 处理完成，结果: {stats}")
 
     def _save_process_log(self, db: Session, patient_id: str, process_type: str, details: Dict):
-        """保存处理日志"""
+        """保存处理日志并添加到Redis缓存"""
+        # Add to Redis set immediately for fast idempotency checks
+        self.redis_client.sadd(self._processed_patients_key, patient_id)
+        # Also save to database as persistent log
+        self._save_process_log_db(db, patient_id, process_type, details)
+
+    def _save_process_log_db(self, db: Session, patient_id: str, process_type: str, details: Dict):
+        """数据库持久化处理日志"""
         log = EmpiProcessLog(
             patient_id=patient_id,
             process_type=process_type,
