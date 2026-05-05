@@ -60,10 +60,12 @@ class SimilarityCalculator:
         methods = {
             'identity_card': self._similarity_identity_card,
             'identity_card_num': self._similarity_identity_card,
+            'card_id': self._similarity_identity_card,
             'name': self._similarity_name,
             'person_name': self._similarity_name,
             'birthday': self._similarity_birthday,
             'gender': self._similarity_gender,
+            'gender_source_value': self._similarity_gender,
             'phone': self._similarity_phone,
             'address': self._similarity_address,
             'location': self._similarity_address,

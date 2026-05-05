@@ -83,6 +83,7 @@ def trigger_full_clean(batch_size: int = 1000, db: Session = Depends(get_db)) ->
 
         # 重置游标（删除Redis键）
         etl_scheduler.redis_client.delete('etl:last_patient_id')
+        etl_scheduler.redis_client.delete(etl_scheduler._processed_patients_key)
 
         # 执行全量清洗
         stats = etl_scheduler.poll_and_process(db, batch_size=batch_size)
@@ -100,6 +101,7 @@ async def trigger_full_clean_async(batch_size: int = 1000, background_tasks: Bac
         db.query(EmpiProcessLog).delete()
         db.commit()
         etl_scheduler.redis_client.delete('etl:last_patient_id')
+        etl_scheduler.redis_client.delete(etl_scheduler._processed_patients_key)
         return etl_scheduler.poll_and_process(db, batch_size=batch_size)
 
     background_tasks.add_task(run_full_clean)
