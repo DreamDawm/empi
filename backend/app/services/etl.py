@@ -13,6 +13,8 @@ import redis
 import json
 from datetime import datetime
 
+BATCH_COMMIT_SIZE = 100
+
 class ETLScheduler:
     def __init__(self):
         self.redis_client = redis.Redis(
@@ -46,7 +48,7 @@ class ETLScheduler:
 
         stats = {'processed': 0, 'merged': 0, 'pending': 0}
 
-        for patient in patients:
+        for i, patient in enumerate(patients):
             # Idempotency check: skip patients already processed in previous batches
             # Note: This checks EmpiProcessLog (tracking processed patients), not EmpiMaster.
             # New EmpiMaster records created in this batch are committed per-patient inside
@@ -55,6 +57,14 @@ class ETLScheduler:
                 continue
 
             self._process_patient(db, patient, weights, threshold, stats)
+
+            # Batch commit every BATCH_COMMIT_SIZE records
+            if (i + 1) % BATCH_COMMIT_SIZE == 0:
+                db.commit()
+                logging_service.info(f"已处理 {i + 1} 条记录，执行批量提交")
+
+        # Commit any remaining records at the end
+        db.commit()
 
         # 使用 patient_id 作为游标，避免同一时刻多条记录被遗漏
         last_processed_id = patients[-1]['patient_id']
@@ -185,7 +195,7 @@ class ETLScheduler:
                 id_card_prefix_index=id_card_prefix
             )
             db.add(patient_record)
-            db.commit()
+            # Batch commit will handle the transaction
 
         candidates = inverted_index_service.search_candidates(db, patient, pinyin_gender)
 
