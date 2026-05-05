@@ -232,8 +232,11 @@ class ETLScheduler:
     def _save_process_log(self, db: Session, patient_id: str, process_type: str, details: Dict):
         """保存处理日志并添加到Redis缓存"""
         # Add to Redis set immediately for fast idempotency checks
-        self.redis_client.sadd(self._processed_patients_key, patient_id)
-        # Also save to database as persistent log
+        try:
+            self.redis_client.sadd(self._processed_patients_key, patient_id)
+        except redis.RedisError:
+            logging_service.warning(f"Redis unavailable, skipping cache for patient {patient_id}")
+        # Always save to database as persistent log
         self._save_process_log_db(db, patient_id, process_type, details)
 
     def _save_process_log_db(self, db: Session, patient_id: str, process_type: str, details: Dict):
