@@ -1,6 +1,7 @@
 import pytest
 from app.core.logger import setup_logger, get_logger
 from app.core.config import settings
+from app.services.logging_service import ETLLoggingService
 
 
 @pytest.mark.unit
@@ -50,3 +51,42 @@ def test_logger_can_log():
     logger.info("Test info message")
     logger.warning("Test warning message")
     logger.error("Test error message")
+
+
+@pytest.mark.unit
+def test_logging_service_singleton():
+    """Test ETLLoggingService is a singleton"""
+    svc1 = ETLLoggingService()
+    svc2 = ETLLoggingService()
+    assert svc1 is svc2
+
+
+@pytest.mark.unit
+def test_logging_service_info():
+    """Test ETLLoggingService info logging"""
+    service = ETLLoggingService()
+    service.clear_queue()
+    service.info("Test info message", patient_id="P001")
+    assert not service._queue.empty()
+
+
+@pytest.mark.unit
+def test_logging_service_error():
+    """Test ETLLoggingService error logging"""
+    service = ETLLoggingService()
+    service.clear_queue()
+    service.error("Test error message", patient_id="P002")
+    entry = service._queue.get_nowait()
+    assert entry['level'] == 'ERROR'
+    assert entry['patient_id'] == 'P002'
+
+
+@pytest.mark.unit
+def test_logging_service_warning():
+    """Test ETLLoggingService warning logging"""
+    service = ETLLoggingService()
+    service.clear_queue()
+    service.warning("Test warning message", patient_id="P003")
+    entry = service._queue.get_nowait()
+    assert entry['level'] == 'WARNING'
+    assert entry['patient_id'] == 'P003'
