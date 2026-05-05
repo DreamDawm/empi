@@ -54,6 +54,14 @@ class ETLLoggingService:
     def warning(self, message: str, patient_id: Optional[str] = None):
         self.log('WARNING', message, patient_id)
 
+    def clear_queue(self):
+        """Clear the log queue (for testing)"""
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                break
+
     async def stream_logs(self) -> AsyncGenerator[str, None]:
         """SSE流式日志"""
         q: asyncio.Queue = asyncio.Queue()
