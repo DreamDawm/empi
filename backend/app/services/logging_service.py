@@ -1,4 +1,5 @@
 import asyncio
+import json
 import queue
 import threading
 from datetime import datetime
@@ -60,7 +61,7 @@ class ETLLoggingService:
         async def put_log():
             while True:
                 entry = await asyncio.get_event_loop().run_in_executor(None, self._queue.get)
-                await q.put(f"data: {entry}\n\n")
+                await q.put(f"data: {json.dumps(entry)}\n\n")
 
         task = asyncio.create_task(put_log())
         try:
