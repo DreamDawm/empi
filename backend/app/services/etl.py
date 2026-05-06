@@ -264,7 +264,12 @@ class ETLScheduler:
 
             logging_service.info(f"[patient_id={current_patient_id}] vs [candidate_id={candidate_patient.patient_id}] 相似度评分: {score:.2f}, 决策: {decision}")
 
-            if decision == 'AUTO_MERGE':
+            if decision == 'DIRECT_MERGE':
+                # 直接合并（身份证+姓名相同）
+                master_id = decision_engine.auto_merge(db, patient, candidate_data, score, 'DIRECT')
+                stats['merged'] += 1
+                logging_service.info(f"[patient_id={current_patient_id}] 直接合并成功（身份证+姓名相同）! master_id={master_id}, 累计合并数: {stats['merged']}")
+            elif decision == 'AUTO_MERGE':
                 master_id = decision_engine.auto_merge(db, patient, candidate_data, score, 'AUTO')
                 stats['merged'] += 1
                 logging_service.info(f"[patient_id={current_patient_id}] 自动合并成功! master_id={master_id}, 累计合并数: {stats['merged']}")
