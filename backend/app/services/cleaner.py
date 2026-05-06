@@ -17,7 +17,11 @@ REGION_PREFIXES = {
 }
 
 WEIGHT_FACTORS = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]  # 18位校验码权重
-CHECK_CODE = ['1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2']  # 校验码映射
+CHECK_CODE = ('1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2')  # 校验码映射
+DAYS_IN_MONTH_COMMON = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+MIN_BIRTH_YEAR = 1900
+MAX_BIRTH_YEAR = 2099
+MAX_CHAR_SET_THRESHOLD = 3
 
 
 def validate_id_card(id_card: str) -> bool:
@@ -87,20 +91,17 @@ def _validate_birth_date(date_str: str) -> bool:
     month = int(date_str[4:6])
     day = int(date_str[6:8])
 
-    if year < 1900 or year > 2099:
+    if year < MIN_BIRTH_YEAR or year > MAX_BIRTH_YEAR:
         return False
     if month < 1 or month > 12:
         return False
 
-    days_in_month = {
-        1: 31, 2: 28, 3: 31, 4: 30, 5: 31, 6: 30,
-        7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31
-    }
+    days_in_month = DAYS_IN_MONTH_COMMON[:]
     # 闰年2月
     if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0):
-        days_in_month[2] = 29
+        days_in_month[1] = 29
 
-    if day < 1 or day > days_in_month[month]:
+    if day < 1 or day > days_in_month[month - 1]:
         return False
 
     return True
@@ -131,8 +132,8 @@ def _has_obvious_duplicate_pattern(id_card: str) -> bool:
         for c in id_card:
             char_counts[c] = char_counts.get(c, 0) + 1
         max_count = max(char_counts.values())
-        # 如果某个字符出现超过12次，认为是重复模式
-        if max_count >= 13:
+        # 如果某个字符出现超过阈值，认为是重复模式
+        if max_count >= MAX_CHAR_SET_THRESHOLD * 4 + 1:
             return True
     return False
 

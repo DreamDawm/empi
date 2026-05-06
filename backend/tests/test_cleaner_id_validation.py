@@ -80,3 +80,9 @@ class TestIdCardValidation:
         """15位身份证应满足格式: 6位地区码 + 6位生日(YYMMDD) + 3位顺序码"""
         assert DataCleaner.validate_id_card('000000900101123') is False  # 无效地区码
         assert DataCleaner.validate_id_card('110101990000123') is False  # 无效日期(990000=99年00月)
+
+    def test_validate_id_card_returns_false_for_invalid_input(self):
+        """空输入和None应该返回False"""
+        assert DataCleaner.validate_id_card(None) is False
+        assert DataCleaner.validate_id_card('') is False
+        assert DataCleaner.validate_id_card('   ') is False
