@@ -39,8 +39,8 @@ class ETLScheduler:
         if not self.redis_client.exists(self._processed_patients_key):
             self.warm_processed_cache(db)
 
-        last_patient_id = self._get_last_patient_id()
-        patients = self._fetch_patients(db, last_patient_id, batch_size)
+        last_id = self._get_last_id()
+        patients = self._fetch_patients(db, last_id, batch_size)
 
         logging_service.info(f"获取到 {len(patients)} 条待处理记录")
 
@@ -49,6 +49,8 @@ class ETLScheduler:
 
         weights = self._get_weights(db)
         threshold = self._get_threshold(db)
+
+        logging_service.info(f"[批次开始] 获取到 {len(patients)} 条待处理记录, 权重={weights}, 阈值={threshold}")
 
         stats = {'processed': 0, 'merged': 0, 'pending': 0}
 
@@ -70,23 +72,23 @@ class ETLScheduler:
         # Commit any remaining records at the end
         db.commit()
 
-        # 使用 patient_id 作为游标，避免同一时刻多条记录被遗漏
-        last_processed_id = patients[-1]['patient_id']
-        self._set_last_patient_id(last_processed_id)
+        # 使用自增 id 作为游标，确保不遗漏任何数据
+        last_processed_id = str(patients[-1]['id'])
+        self._set_last_id(last_processed_id)
 
         logging_service.info(f"本轮处理完成: {stats}")
 
         return stats
 
-    def _get_last_patient_id(self) -> Optional[str]:
-        """获取上一次处理的最大 patient_id"""
-        key = 'etl:last_patient_id'
+    def _get_last_id(self) -> Optional[str]:
+        """获取上一次处理的最大自增 id"""
+        key = 'etl:last_id'
         return self.redis_client.get(key)
 
-    def _set_last_patient_id(self, patient_id: str):
-        """保存上一次处理的最大 patient_id"""
-        key = 'etl:last_patient_id'
-        self.redis_client.set(key, patient_id)
+    def _set_last_id(self, last_id: str):
+        """保存上一次处理的最大自增 id"""
+        key = 'etl:last_id'
+        self.redis_client.set(key, last_id)
 
     def warm_processed_cache(self, db: Session):
         """从数据库加载已处理的患者ID到Redis缓存"""
@@ -108,16 +110,14 @@ class ETLScheduler:
 
         logging_service.info(f"已加载 {len(patient_ids)} 条已处理记录到缓存")
 
-    def _fetch_patients(self, db: Session, last_patient_id: Optional[str],
+    def _fetch_patients(self, db: Session, last_id: Optional[str],
                        batch_size: int) -> List[Dict[str, Any]]:
-        """从im_patient表获取增量数据，使用 patient_id 作为游标"""
-        if last_patient_id:
-            # 使用 > 而不是 >= 确保不会重复处理同一批
-            query = text("SELECT * FROM im_patient WHERE patient_id > :last_id ORDER BY patient_id LIMIT :limit")
-            result = db.execute(query.params(last_id=last_patient_id, limit=batch_size))
+        """从im_patient表获取增量数据，使用自增 id 作为游标"""
+        if last_id:
+            query = text("SELECT * FROM im_patient WHERE id > :last_id ORDER BY id LIMIT :limit")
+            result = db.execute(query.params(last_id=last_id, limit=batch_size))
         else:
-            # 首次运行，按 patient_id 顺序获取
-            query = text("SELECT * FROM im_patient ORDER BY patient_id LIMIT :limit")
+            query = text("SELECT * FROM im_patient ORDER BY id LIMIT :limit")
             result = db.execute(query.params(limit=batch_size))
 
         columns = result.keys()
@@ -138,6 +138,12 @@ class ETLScheduler:
 
     def _is_processed_db(self, db: Session, patient_id: str) -> bool:
         """Database fallback for processed check"""
+        # Also check if patient already exists in empi_master (handles interrupted ETL)
+        existing_master = db.query(EmpiMaster).filter(
+            EmpiMaster.patient_id == patient_id
+        ).first()
+        if existing_master:
+            return True
         log = db.query(EmpiProcessLog).filter(
             EmpiProcessLog.patient_id == patient_id
         ).first()
@@ -192,7 +198,10 @@ class ETLScheduler:
                          weights: Dict[str, float], threshold: float,
                          stats: Dict[str, int]):
         """处理单个患者"""
-        logging_service.info(f"处理患者: {patient['patient_id']}")
+        current_patient_id = patient['patient_id']
+        current_patient_name = patient.get('person_name', '')
+        current_patient_gender = patient.get('gender', '')
+        logging_service.info(f"[patient_id={current_patient_id}] 开始处理: 姓名={current_patient_name}, 性别={current_patient_gender}")
 
         inverted_index = inverted_index_service.build_index(patient)
 
@@ -200,6 +209,8 @@ class ETLScheduler:
         pinyin_gender = inverted_index.get('pinyin_gender', '')
         birth_year_gender = inverted_index.get('birth_year_gender', '')
         id_card_prefix = inverted_index.get('id_card_prefix', '')
+
+        logging_service.info(f"[patient_id={current_patient_id}] 索引字段: pinyin_gender={pinyin_gender}, birth_year_gender={birth_year_gender}, id_card_prefix={id_card_prefix}")
 
         patient_record = db.query(EmpiMaster).filter(
             EmpiMaster.patient_id == patient['patient_id']
@@ -213,6 +224,7 @@ class ETLScheduler:
                 patient_name=self.data_cleaner.clean_name(patient.get('person_name', '')),
                 master_id=master_id,
                 status='NORMAL',
+                card_id=patient.get('card_id') or patient.get('identity_card_num'),
                 inverted_index=inverted_index,
                 pinyin_gender_index=pinyin_gender,
                 birth_year_gender_index=birth_year_gender,
@@ -222,6 +234,7 @@ class ETLScheduler:
             # Batch commit will handle the transaction
 
         candidates = inverted_index_service.search_candidates(db, patient, pinyin_gender)
+        logging_service.info(f"[patient_id={current_patient_id}] 找到 {len(candidates)} 个候选匹配")
 
         for candidate in candidates:
             if candidate['patient_id'] == patient['patient_id']:
@@ -236,11 +249,11 @@ class ETLScheduler:
 
             candidate_data = {
                 'patient_id': candidate_patient.patient_id,
-                'patient_name': candidate_patient.patient_name,
+                'person_name': candidate_patient.patient_name,
                 'gender': candidate_patient.inverted_index.get('pinyin_gender', '').split('_')[-1] if candidate_patient.inverted_index else '',
                 'birthday': candidate_patient.inverted_index.get('birth_year_gender', '').split('_')[0] if candidate_patient.inverted_index else None,
+                'card_id': candidate_patient.card_id or candidate_patient.id_card_prefix_index,
                 'identity_card_num': None,
-                'card_id': None,
                 'phone': None,
                 'location': None,
             }
@@ -249,19 +262,25 @@ class ETLScheduler:
                 db, patient, candidate_data, weights, threshold
             )
 
-            if decision == 'AUTO_MERGE':
-                decision_engine.auto_merge(db, patient, candidate_data, score, 'AUTO')
-                stats['merged'] += 1
+            logging_service.info(f"[patient_id={current_patient_id}] vs [candidate_id={candidate_patient.patient_id}] 相似度评分: {score:.2f}, 决策: {decision}")
 
-            self._save_process_log(db, patient['patient_id'], 'CALCULATE', {
-                'candidate_id': candidate['patient_id'],
-                'score': score,
-                'decision': decision
-            })
+            if decision == 'AUTO_MERGE':
+                master_id = decision_engine.auto_merge(db, patient, candidate_data, score, 'AUTO')
+                stats['merged'] += 1
+                logging_service.info(f"[patient_id={current_patient_id}] 自动合并成功! master_id={master_id}, 累计合并数: {stats['merged']}")
+            else:
+                stats['pending'] += 1
+                logging_service.info(f"[patient_id={current_patient_id}] 进入待审核, 累计待审核数: {stats['pending']}")
+
+        # Save process log once per patient (not per candidate) for idempotency tracking
+        self._save_process_log(db, patient['patient_id'], 'PROCESS', {
+            'candidates_checked': len(candidates),
+            'merges': stats['merged']
+        })
 
         stats['processed'] += 1
 
-        logging_service.info(f"患者 {patient['patient_id']} 处理完成，结果: {stats}")
+        logging_service.info(f"[patient_id={current_patient_id}] 处理完成: 已处理={stats['processed']}, 已合并={stats['merged']}, 待审核={stats['pending']}")
 
     def _save_process_log(self, db: Session, patient_id: str, process_type: str, details: Dict):
         """保存处理日志并添加到Redis缓存"""
