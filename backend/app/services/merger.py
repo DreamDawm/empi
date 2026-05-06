@@ -19,9 +19,44 @@ class MergeDecisionEngine:
         self.snowflake = get_snowflake_generator()
         self.data_cleaner = DataCleaner()
 
+    def _is_direct_merge_eligible(self, patient_a: Dict[str, Any],
+                                  patient_b: Dict[str, Any]) -> bool:
+        """检查两个患者是否满足直接合并条件（身份证+姓名完全相同）"""
+        # 获取清洗后的身份证
+        id_a = self.data_cleaner.clean_id_card(
+            patient_a.get('identity_card_num') or patient_a.get('card_id') or ''
+        )
+        id_b = self.data_cleaner.clean_id_card(
+            patient_b.get('identity_card_num') or patient_b.get('card_id') or ''
+        )
+
+        # 身份证必须有效且相同
+        if not id_a or not id_b or id_a != id_b:
+            return False
+
+        # 获取清洗后的姓名（转为拼音比较，因为可能大小写/空格不同）
+        name_a = self.data_cleaner.get_pinyin(
+            patient_a.get('patient_name') or patient_a.get('person_name') or ''
+        )
+        name_b = self.data_cleaner.get_pinyin(
+            patient_b.get('patient_name') or patient_b.get('person_name') or ''
+        )
+
+        # 姓名拼音必须相同
+        if not name_a or not name_b or name_a != name_b:
+            return False
+
+        return True
+
     def decide(self, db: Session, patient_a: Dict[str, Any], patient_b: Dict[str, Any],
                weights: Dict[str, float], threshold: float) -> Tuple[str, float]:
         """决策是否合并：返回 (decision, score)"""
+        # 优先检查是否满足直接合并条件（身份证+姓名相同）
+        if self._is_direct_merge_eligible(patient_a, patient_b):
+            # 直接合并，给最高分确保通过阈值
+            return ('DIRECT_MERGE', 100.0)
+
+        # 不满足直接合并条件，进行相似度评分
         score = similarity_calculator.calculate(patient_a, patient_b, weights)
         field_details = similarity_calculator.get_field_details(patient_a, patient_b)
 
