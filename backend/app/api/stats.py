@@ -62,7 +62,7 @@ def trigger_clean(batch_size: int = 1000, db: Session = Depends(get_db)) -> Dict
         return {"message": f"清洗失败: {str(e)}", "stats": None}
 
 @router.post("/trigger-clean-async")
-async def trigger_clean_async(batch_size: int = 1000, background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> Dict[str, Any]:
+async def trigger_clean_async(background_tasks: BackgroundTasks, batch_size: int = 1000, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """触发增量清洗 - 异步执行（后台任务）"""
     def run_clean():
         return etl_scheduler.poll_and_process(db, batch_size=batch_size)
@@ -82,7 +82,7 @@ def trigger_full_clean(batch_size: int = 1000, db: Session = Depends(get_db)) ->
         db.commit()
 
         # 重置游标（删除Redis键）
-        etl_scheduler.redis_client.delete('etl:last_patient_id')
+        etl_scheduler.redis_client.delete('etl:last_id')
         etl_scheduler.redis_client.delete(etl_scheduler._processed_patients_key)
 
         # 执行全量清洗
@@ -92,7 +92,7 @@ def trigger_full_clean(batch_size: int = 1000, db: Session = Depends(get_db)) ->
         return {"message": f"全量清洗失败: {str(e)}", "stats": None}
 
 @router.post("/trigger-full-clean-async")
-async def trigger_full_clean_async(batch_size: int = 1000, background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> Dict[str, Any]:
+async def trigger_full_clean_async(background_tasks: BackgroundTasks, batch_size: int = 1000, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """触发全量清洗 - 异步执行（后台任务）"""
     def run_full_clean():
         db.query(EmpiMaster).delete()
@@ -100,7 +100,7 @@ async def trigger_full_clean_async(batch_size: int = 1000, background_tasks: Bac
         db.query(EmpiPendingReview).delete()
         db.query(EmpiProcessLog).delete()
         db.commit()
-        etl_scheduler.redis_client.delete('etl:last_patient_id')
+        etl_scheduler.redis_client.delete('etl:last_id')
         etl_scheduler.redis_client.delete(etl_scheduler._processed_patients_key)
         return etl_scheduler.poll_and_process(db, batch_size=batch_size)
 
@@ -127,3 +127,23 @@ def clear_processed_cache(db: Session = Depends(get_db)) -> Dict[str, Any]:
     """清除已处理患者缓存（用于调试）"""
     etl_scheduler.redis_client.delete(etl_scheduler._processed_patients_key)
     return {"message": "缓存已清除"}
+
+@router.post("/admin/add-card-id-column")
+def add_card_id_column(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """添加card_id列到empi_master表（仅首次需要）"""
+    from sqlalchemy import text
+    try:
+        # Check if column exists
+        result = db.execute(text("DESCRIBE empi_master"))
+        columns = [row[0] for row in result.fetchall()]
+        if 'card_id' in columns:
+            return {"message": "card_id列已存在，无需添加"}
+
+        # Add column
+        db.execute(text("ALTER TABLE empi_master ADD COLUMN card_id VARCHAR(50) NULL COMMENT '身份证号（完整）' AFTER merged_to_master_id"))
+        db.execute(text("CREATE INDEX idx_card_id ON empi_master(card_id)"))
+        db.commit()
+        return {"message": "card_id列添加成功"}
+    except Exception as e:
+        db.rollback()
+        return {"message": f"添加card_id列失败: {str(e)}"}
