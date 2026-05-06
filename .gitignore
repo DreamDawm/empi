@@ -16,3 +16,4 @@ frontend/dist/
 # Logs
 backend/logs/*
 !backend/logs/.gitkeep
+.worktrees/
