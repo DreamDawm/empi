@@ -22,13 +22,14 @@ def test_clean_gender():
 
 def test_clean_id_card():
     cleaner = DataCleaner()
-    assert cleaner.clean_id_card("110101199001011234") == "110101199001011234"
-    assert cleaner.clean_id_card("  110101199001011234  ") == "110101199001011234"
+    # 11010119900101123 是有效的18位身份证（校验码=7）
+    assert cleaner.clean_id_card("110101199001011237") == "110101199001011237"
+    assert cleaner.clean_id_card("  110101199001011237  ") == "110101199001011237"
     assert cleaner.clean_id_card("123") is None
 
 def test_get_id_card_prefix():
     cleaner = DataCleaner()
-    assert cleaner.get_id_card_prefix("110101199001011234") == "110101"
+    assert cleaner.get_id_card_prefix("110101199001011237") == "110101"
     assert cleaner.get_id_card_prefix("12345") is None
 
 def test_clean_phone():
@@ -46,10 +47,10 @@ def test_get_birth_year():
 def test_build_inverted_index():
     cleaner = DataCleaner()
     patient = {
-        'patient_name': '张三',
+        'person_name': '张三',
         'gender': '男',
         'birthday': '1990-01-01',
-        'identity_card_num': '110101199001011234'
+        'identity_card_num': '110101199001011237'
     }
     index = cleaner.build_inverted_index(patient)
     assert index['pinyin_gender'] == 'zhangsan_M'

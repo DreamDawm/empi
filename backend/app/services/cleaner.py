@@ -168,13 +168,28 @@ class DataCleaner:
 
     @staticmethod
     def clean_id_card(id_card: str) -> Optional[str]:
-        """清洗身份证号：去除空格，验证格式"""
+        """清洗身份证号：去除空格，验证格式
+
+        对于15位和18位身份证进行格式校验。
+        无效的身份证返回None，但会保留原始值用于调试。
+        """
         if not id_card:
             return None
-        id_card = re.sub(r'\s+', '', str(id_card).strip())
-        if len(id_card) < 15:
+        cleaned = re.sub(r'\s+', '', str(id_card).strip())
+        if len(cleaned) < 15:
             return None
-        return id_card
+        # 格式校验（18位和15位）
+        if not validate_id_card(cleaned):
+            # 无效身份证返回None，但可以通过 get_raw_id_card 获取原始值
+            return None
+        return cleaned
+
+    @staticmethod
+    def get_raw_id_card(id_card: str) -> Optional[str]:
+        """获取原始身份证（不校验），仅去除空格"""
+        if not id_card:
+            return None
+        return re.sub(r'\s+', '', str(id_card).strip())
 
     @staticmethod
     def validate_id_card(id_card: str) -> bool:

@@ -15,13 +15,13 @@ class TestDirectMergeDecision:
         patient_a = {
             'patient_id': 'P001',
             'patient_name': '张三',
-            'identity_card_num': '110101199001011234',
+            'identity_card_num': '110101199001011237',
             'gender': 'M',
         }
         patient_b = {
             'patient_id': 'P002',
             'patient_name': '张三',  # 同名
-            'identity_card_num': '110101199001011234',  # 同身份证
+            'identity_card_num': '110101199001011237',  # 同身份证
             'gender': 'F',  # 性别不同不影响直接合并
         }
 
@@ -33,7 +33,7 @@ class TestDirectMergeDecision:
         patient_a = {
             'patient_id': 'P001',
             'patient_name': '张三',
-            'identity_card_num': '110101199001011234',
+            'identity_card_num': '110101199001011237',
         }
         patient_b = {
             'patient_id': 'P002',
@@ -49,12 +49,12 @@ class TestDirectMergeDecision:
         patient_a = {
             'patient_id': 'P001',
             'patient_name': '张三',
-            'identity_card_num': '110101199001011234',
+            'identity_card_num': '110101199001011237',
         }
         patient_b = {
             'patient_id': 'P002',
             'patient_name': '李四',  # 不同名
-            'identity_card_num': '110101199001011234',  # 身份证相同
+            'identity_card_num': '110101199001011237',  # 身份证相同
         }
 
         result = self.engine._is_direct_merge_eligible(patient_a, patient_b)
@@ -81,13 +81,13 @@ class TestDirectMergeDecision:
         patient_a = {
             'patient_id': 'P001',
             'patient_name': '张三',
-            'identity_card_num': '110101199001011234',
+            'identity_card_num': '110101199001011237',
             'gender': 'M',
         }
         patient_b = {
             'patient_id': 'P002',
             'patient_name': '张三',
-            'identity_card_num': '110101199001011234',
+            'identity_card_num': '110101199001011237',
             'gender': 'F',
         }
 
@@ -107,12 +107,12 @@ class TestDirectMergeDecision:
         patient_a = {
             'patient_id': 'P001',
             'patient_name': '张  三',  # 有空格
-            'identity_card_num': '110101199001011234',
+            'identity_card_num': '110101199001011237',
         }
         patient_b = {
             'patient_id': 'P002',
             'patient_name': '张三',  # 无空格
-            'identity_card_num': '110101199001011234',
+            'identity_card_num': '110101199001011237',
         }
 
         result = self.engine._is_direct_merge_eligible(patient_a, patient_b)
@@ -126,7 +126,7 @@ class TestDirectMergeDecision:
         patient_b = {
             'patient_id': 'P002',
             'patient_name': '张三',
-            'identity_card_num': '110101199001011234',
+            'identity_card_num': '110101199001011237',
         }
 
         result = self.engine._is_direct_merge_eligible(patient_a, patient_b)
@@ -137,12 +137,12 @@ class TestDirectMergeDecision:
         patient_a = {
             'patient_id': 'P001',
             'patient_name': None,
-            'identity_card_num': '110101199001011234',
+            'identity_card_num': '110101199001011237',
         }
         patient_b = {
             'patient_id': 'P002',
             'patient_name': '张三',
-            'identity_card_num': '110101199001011234',
+            'identity_card_num': '110101199001011237',
         }
 
         result = self.engine._is_direct_merge_eligible(patient_a, patient_b)
