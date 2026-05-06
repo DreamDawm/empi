@@ -117,3 +117,33 @@ class TestDirectMergeDecision:
 
         result = self.engine._is_direct_merge_eligible(patient_a, patient_b)
         assert result is True  # 清洗后拼音都是zhangsan
+
+    def test_empty_dict_should_not_direct_merge(self):
+        """空字典不应该触发直接合并"""
+        patient_a = {
+            'patient_id': 'P001',
+        }
+        patient_b = {
+            'patient_id': 'P002',
+            'patient_name': '张三',
+            'identity_card_num': '110101199001011234',
+        }
+
+        result = self.engine._is_direct_merge_eligible(patient_a, patient_b)
+        assert result is False
+
+    def test_name_none_should_not_direct_merge(self):
+        """姓名为None不应该触发直接合并"""
+        patient_a = {
+            'patient_id': 'P001',
+            'patient_name': None,
+            'identity_card_num': '110101199001011234',
+        }
+        patient_b = {
+            'patient_id': 'P002',
+            'patient_name': '张三',
+            'identity_card_num': '110101199001011234',
+        }
+
+        result = self.engine._is_direct_merge_eligible(patient_a, patient_b)
+        assert result is False

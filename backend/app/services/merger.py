@@ -9,6 +9,8 @@ import json
 from datetime import datetime
 
 class MergeDecisionEngine:
+    DIRECT_MERGE_SCORE = 100.0
+
     def __init__(self):
         self.redis_client = redis.Redis(
             host='localhost',
@@ -54,7 +56,7 @@ class MergeDecisionEngine:
         # 优先检查是否满足直接合并条件（身份证+姓名相同）
         if self._is_direct_merge_eligible(patient_a, patient_b):
             # 直接合并，给最高分确保通过阈值
-            return ('DIRECT_MERGE', 100.0)
+            return ('DIRECT_MERGE', self.DIRECT_MERGE_SCORE)
 
         # 不满足直接合并条件，进行相似度评分
         score = similarity_calculator.calculate(patient_a, patient_b, weights)
