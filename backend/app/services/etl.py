@@ -73,19 +73,19 @@ class ETLScheduler:
         db.commit()
 
         # 使用自增 id 作为游标，确保不遗漏任何数据
-        last_processed_id = str(patients[-1]['id'])
-        self._set_last_id(last_processed_id)
+        self._set_last_id(patients[-1]['id'])
 
         logging_service.info(f"本轮处理完成: {stats}")
 
         return stats
 
-    def _get_last_id(self) -> Optional[str]:
+    def _get_last_id(self) -> Optional[int]:
         """获取上一次处理的最大自增 id"""
         key = 'etl:last_id'
-        return self.redis_client.get(key)
+        val = self.redis_client.get(key)
+        return int(val) if val is not None else None
 
-    def _set_last_id(self, last_id: str):
+    def _set_last_id(self, last_id: int):
         """保存上一次处理的最大自增 id"""
         key = 'etl:last_id'
         self.redis_client.set(key, last_id)
@@ -110,7 +110,7 @@ class ETLScheduler:
 
         logging_service.info(f"已加载 {len(patient_ids)} 条已处理记录到缓存")
 
-    def _fetch_patients(self, db: Session, last_id: Optional[str],
+    def _fetch_patients(self, db: Session, last_id: Optional[int],
                        batch_size: int) -> List[Dict[str, Any]]:
         """从im_patient表获取增量数据，使用自增 id 作为游标"""
         if last_id:
