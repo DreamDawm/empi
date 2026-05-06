@@ -9,7 +9,7 @@ class EmpiMergeLog(Base):
     person_id_a = Column(String(50), nullable=False)
     person_id_b = Column(String(50), nullable=False)
     master_id = Column(BigInteger, nullable=False)
-    merge_type = Column(String(20), nullable=False, comment='AUTO/MANUAL')
+    merge_type = Column(String(20), nullable=False, comment='AUTO/MANUAL/DIRECT')
     similarity_score = Column(Numeric(5,2), nullable=False)
     merge_time = Column(DateTime, nullable=False, server_default=func.now())
     created_at = Column(DateTime, server_default=func.now())
