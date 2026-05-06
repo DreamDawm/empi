@@ -4,6 +4,7 @@ from app.models import EmpiMaster, EmpiMergeLog, EmpiPendingReview, EmpiProcessL
 from app.core.snowflake import get_snowflake_generator
 from app.services.similarity import similarity_calculator
 from app.services.cleaner import DataCleaner
+from app.core.config import settings
 import redis
 import json
 from datetime import datetime
@@ -13,9 +14,10 @@ class MergeDecisionEngine:
 
     def __init__(self):
         self.redis_client = redis.Redis(
-            host='localhost',
-            port=6379,
-            db=0,
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            db=settings.REDIS_DB,
+            password=settings.REDIS_PASSWORD,
             decode_responses=True
         )
         self.snowflake = get_snowflake_generator()
