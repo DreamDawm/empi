@@ -105,28 +105,51 @@ class MergeDecisionEngine:
         if existing_log:
             return existing_log.master_id
 
-        created_a = patient_a.get('created_at') or datetime.now()
-        created_b = patient_b.get('created_at') or datetime.now()
+        # 查询两个患者的 empi_master 记录
+        record_a = db.query(EmpiMaster).filter(
+            EmpiMaster.patient_id == patient_a['patient_id']
+        ).first()
+        record_b = db.query(EmpiMaster).filter(
+            EmpiMaster.patient_id == patient_b['patient_id']
+        ).first()
 
-        if created_a <= created_b:
+        # 决定谁是 master，谁是 slave
+        # 原则：候选者（patient_b）已经在数据库中存在，应该优先作为 master
+        # 当前患者（patient_a）是新处理的，应该作为 slave
+
+        # 特殊情况处理：
+        # 1. 如果候选者已被合并，使用其 merged_to_master_id
+        # 2. 如果候选者不存在（不应该发生），当前患者作为 master
+
+        # 查询候选者的状态
+        if record_b:
+            if record_b.status == 'MERGED' and record_b.merged_to_master_id:
+                # 候选者已被合并，使用其最终主索引
+                master_id = record_b.merged_to_master_id
+                # 当前患者作为 slave，合并到候选者的主索引
+                master_patient = patient_b
+                slave_patient = patient_a
+                master_record = record_b
+                slave_record = record_a
+            else:
+                # 候选者是 NORMAL，作为 master
+                master_patient = patient_b
+                slave_patient = patient_a
+                master_record = record_b
+                slave_record = record_a
+                master_id = record_b.master_id
+        else:
+            # 候选者不存在（不应该发生），当前患者作为 master
             master_patient = patient_a
             slave_patient = patient_b
-        else:
-            master_patient = patient_b
-            slave_patient = patient_a
+            master_record = record_a
+            slave_record = None
+            if record_a:
+                master_id = record_a.master_id
+            else:
+                master_id = self.snowflake.next_id()
 
-        master_record = db.query(EmpiMaster).filter(
-            EmpiMaster.patient_id == master_patient['patient_id']
-        ).first()
-
-        if master_record:
-            master_id = master_record.master_id
-        else:
-            master_id = self.snowflake.next_id()
-
-        slave_record = db.query(EmpiMaster).filter(
-            EmpiMaster.patient_id == slave_patient['patient_id']
-        ).first()
+        # 如果 slave_record 存在，更新其状态
 
         if slave_record:
             slave_record.status = 'MERGED'

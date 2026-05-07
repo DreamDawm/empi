@@ -11,6 +11,7 @@ class EmpiMaster(Base):
     master_id = Column(BigInteger, nullable=False, unique=True, comment='主索引ID（雪花算法）')
     status = Column(String(20), nullable=False, default='NORMAL', comment='状态：NORMAL/MERGED')
     merged_to_master_id = Column(BigInteger, nullable=True, comment='合并到的主索引ID')
+    card_id = Column(String(50), nullable=True, index=True, comment='身份证号码')
     inverted_index = Column(JSON, nullable=True, comment='倒排索引数据')
 
     # 预索引字段，用于快速检索（从 inverted_index 中提取）

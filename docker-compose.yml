@@ -3,7 +3,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "8000:8000"
+      - "8808:8808"
     environment:
       - MYSQL_HOST=${MYSQL_HOST:-host.docker.internal}
       - MYSQL_PORT=${MYSQL_PORT:-3306}

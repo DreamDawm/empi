@@ -231,7 +231,7 @@ class ETLScheduler:
                 id_card_prefix_index=id_card_prefix
             )
             db.add(patient_record)
-            # Batch commit will handle the transaction
+            db.flush()  # Flush to make the new record visible to subsequent queries
 
         candidates = inverted_index_service.search_candidates(db, patient, pinyin_gender)
         logging_service.info(f"[patient_id={current_patient_id}] 找到 {len(candidates)} 个候选匹配")
@@ -252,8 +252,8 @@ class ETLScheduler:
                 'person_name': candidate_patient.patient_name,
                 'gender': candidate_patient.inverted_index.get('pinyin_gender', '').split('_')[-1] if candidate_patient.inverted_index else '',
                 'birthday': candidate_patient.inverted_index.get('birth_year_gender', '').split('_')[0] if candidate_patient.inverted_index else None,
-                'card_id': candidate_patient.card_id or candidate_patient.id_card_prefix_index,
-                'identity_card_num': None,
+                'card_id': candidate_patient.card_id,
+                'identity_card_num': candidate_patient.card_id,
                 'phone': None,
                 'location': None,
             }
