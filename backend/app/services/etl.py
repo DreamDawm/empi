@@ -224,6 +224,7 @@ class ETLScheduler:
                 patient_name=self.data_cleaner.clean_name(patient.get('person_name', '')),
                 master_id=master_id,
                 status='NORMAL',
+                merged_to_master_id=master_id,  # Master points to itself
                 card_id=patient.get('card_id') or patient.get('identity_card_num'),
                 inverted_index=inverted_index,
                 pinyin_gender_index=pinyin_gender,
