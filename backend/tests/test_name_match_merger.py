@@ -140,3 +140,85 @@ class TestFindByName:
         results = self.merger.find_by_name(mock_db, patient)
 
         assert results == []
+
+
+class TestCalculateNonIdCardScore:
+    """非身份证字段相似度计算测试"""
+
+    def setup_method(self):
+        self.merger = NameMatchMerger()
+
+    def test_all_fields_full_score(self):
+        """所有字段都匹配应得满分"""
+        patient_a = {
+            'patient_id': 'P001',
+            'patient_name': '张三',
+            'birthday': '1990-01-01',
+            'gender': 'M',
+            'phone': '13800138000',
+            'location': '北京市朝阳区'
+        }
+        patient_b = {
+            'patient_id': 'P002',
+            'patient_name': '张三',
+            'birthday': '1990-01-01',
+            'gender': 'M',
+            'phone': '13800138000',
+            'location': '北京市朝阳区'
+        }
+
+        score, details = self.merger.calculate_non_id_card_score(patient_a, patient_b)
+
+        assert details['name'] == 100.0
+        # Birthday: year(30) + month(20) + day(20) = 70
+        assert details['birthday'] == 70.0
+        assert details['gender'] == 100.0
+        assert details['phone'] == 100.0
+        assert details['address'] == 100.0
+
+    def test_partial_fields_match(self):
+        """部分字段匹配应返回相应分数"""
+        patient_a = {
+            'patient_id': 'P001',
+            'patient_name': '张三',
+            'birthday': '1990-01-01',
+            'gender': 'M',
+        }
+        patient_b = {
+            'patient_id': 'P002',
+            'patient_name': '张三',
+            'birthday': '1990-01-02',  # 日期不同
+            'gender': 'F',  # 性别不同
+        }
+
+        score, details = self.merger.calculate_non_id_card_score(patient_a, patient_b)
+
+        assert details['name'] == 100.0
+        assert details['gender'] == 0.0
+
+    def test_empty_fields_zero_score(self):
+        """空字段应得0分"""
+        patient_a = {'patient_id': 'P001', 'patient_name': '张三'}
+        patient_b = {'patient_id': 'P002', 'patient_name': '张三'}
+
+        score, details = self.merger.calculate_non_id_card_score(patient_a, patient_b)
+
+        assert details.get('birthday', 0) == 0.0
+        assert details.get('phone', 0) == 0.0
+
+    def test_excludes_identity_card(self):
+        """不应包含身份证字段"""
+        patient_a = {
+            'patient_id': 'P001',
+            'patient_name': '张三',
+            'identity_card_num': '110101199001011237'
+        }
+        patient_b = {
+            'patient_id': 'P002',
+            'patient_name': '张三',
+            'identity_card_num': '110101199001011238'
+        }
+
+        score, details = self.merger.calculate_non_id_card_score(patient_a, patient_b)
+
+        assert 'identity_card' not in details

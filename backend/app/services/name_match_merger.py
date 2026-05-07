@@ -75,8 +75,34 @@ class NameMatchMerger:
 
     def calculate_non_id_card_score(self, patient_a: Dict[str, Any],
                                      patient_b: Dict[str, Any]) -> Tuple[float, Dict[str, float]]:
-        """计算除身份证外的字段相似度"""
-        pass
+        """计算除身份证外的字段相似度
+
+        计算字段：name, birthday, gender, phone, address
+        排除字段：identity_card, card_id
+
+        Returns:
+            Tuple[float, Dict[str, float]]: (平均分, 各字段分数详情)
+        """
+        # 定义非身份证字段
+        non_id_fields = ['name', 'birthday', 'gender', 'phone', 'address']
+
+        details = {}
+        total_score = 0.0
+        valid_field_count = 0
+
+        for field in non_id_fields:
+            score = similarity_calculator._calculate_field_similarity(field, patient_a, patient_b)
+            details[field] = score
+
+            # 只计算有值的字段
+            if score > 0 or (patient_a.get(field) and patient_b.get(field)):
+                total_score += score
+                valid_field_count += 1
+
+        # 计算平均分（只考虑有值的字段）
+        avg_score = total_score / valid_field_count if valid_field_count > 0 else 0.0
+
+        return avg_score, details
 
     def is_majority_full_score(self, field_scores: Dict[str, float]) -> bool:
         """判断是否超过一半字段得满分"""
