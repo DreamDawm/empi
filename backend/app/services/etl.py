@@ -324,17 +324,20 @@ class ETLScheduler:
 
     def _save_merge_log(self, db: Session, patient_id: str, master_id: int,
                         score: float, merge_type: str):
-        """保存合并日志"""
+        """保存合并日志
+
+        For NAME_MATCH merge, person_id_b uses master_id as placeholder since
+        there's no specific second patient in this merge scenario.
+        """
         from app.models import EmpiMergeLog
 
         log = EmpiMergeLog(
-            patient_id_a=patient_id,
-            patient_id_b=None,  # Name match doesn't have a specific patient_id_b
+            person_id_a=patient_id,
+            person_id_b=str(master_id),  # Use master_id as placeholder for NAME_MATCH
             master_id=master_id,
-            score=score,
+            similarity_score=score,
             merge_type=merge_type,
-            status='COMPLETED',
-            merged_at=datetime.now()
+            merge_time=datetime.now()
         )
         db.add(log)
         db.commit()
