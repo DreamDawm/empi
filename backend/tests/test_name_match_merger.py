@@ -222,3 +222,80 @@ class TestCalculateNonIdCardScore:
         score, details = self.merger.calculate_non_id_card_score(patient_a, patient_b)
 
         assert 'identity_card' not in details
+
+
+class TestIsMajorityFullScore:
+    """满分字段占比判断测试"""
+
+    def setup_method(self):
+        self.merger = NameMatchMerger()
+
+    def test_all_fields_full_score(self):
+        """所有字段满分应返回 True"""
+        field_scores = {
+            'name': 100.0,
+            'birthday': 100.0,
+            'gender': 100.0,
+            'phone': 100.0,
+            'address': 100.0
+        }
+        assert self.merger.is_majority_full_score(field_scores) is True
+
+    def test_majority_full_score(self):
+        """超过一半字段满分应返回 True"""
+        field_scores = {
+            'name': 100.0,
+            'birthday': 100.0,
+            'gender': 100.0,  # 3/5 = 60% > 50%
+            'phone': 0.0,
+            'address': 0.0
+        }
+        assert self.merger.is_majority_full_score(field_scores) is True
+
+    def test_exactly_half_full_score(self):
+        """刚好一半字段满分应返回 False"""
+        field_scores = {
+            'name': 100.0,
+            'birthday': 100.0,  # 2/4 = 50%，不满足 > 50%
+            'gender': 0.0,
+            'address': 0.0
+        }
+        assert self.merger.is_majority_full_score(field_scores) is False
+
+    def test_minority_full_score(self):
+        """少于一半字段满分应返回 False"""
+        field_scores = {
+            'name': 100.0,  # 1/5 = 20% < 50%
+            'birthday': 80.0,
+            'gender': 50.0,
+            'phone': 0.0,
+            'address': 0.0
+        }
+        assert self.merger.is_majority_full_score(field_scores) is False
+
+    def test_empty_scores(self):
+        """空分数应返回 False"""
+        field_scores = {}
+        assert self.merger.is_majority_full_score(field_scores) is False
+
+    def test_only_name_full_score(self):
+        """只有姓名满分应返回 False（1/5 = 20%）"""
+        field_scores = {
+            'name': 100.0,
+            'birthday': 0.0,
+            'gender': 0.0,
+            'phone': 0.0,
+            'address': 0.0
+        }
+        assert self.merger.is_majority_full_score(field_scores) is False
+
+    def test_three_of_five_full_score(self):
+        """3/5 满分应返回 True（60% > 50%）"""
+        field_scores = {
+            'name': 100.0,
+            'birthday': 100.0,
+            'gender': 100.0,
+            'phone': 50.0,
+            'address': 0.0
+        }
+        assert self.merger.is_majority_full_score(field_scores) is True

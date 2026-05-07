@@ -105,8 +105,22 @@ class NameMatchMerger:
         return avg_score, details
 
     def is_majority_full_score(self, field_scores: Dict[str, float]) -> bool:
-        """判断是否超过一半字段得满分"""
-        pass
+        """判断是否超过一半字段得满分（100分）
+
+        Args:
+            field_scores: 各字段分数字典
+
+        Returns:
+            bool: 是否超过一半字段得满分
+        """
+        if not field_scores:
+            return False
+
+        total_fields = len(field_scores)
+        full_score_count = sum(1 for score in field_scores.values() if score >= 100.0)
+
+        # 必须严格超过一半（> 50%）
+        return full_score_count > total_fields / 2
 
     def decide_merge(self, db: Session, patient: Dict[str, Any],
                      threshold: float) -> Tuple[str, Optional[int], float]:
