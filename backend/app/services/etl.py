@@ -7,6 +7,7 @@ from app.services.cleaner import DataCleaner
 from app.services.inverted_index import inverted_index_service
 from app.services.similarity import similarity_calculator
 from app.services.merger import decision_engine
+from app.services.name_match_merger import name_match_merger
 from app.services.logging_service import logging_service
 from app.core.config import settings
 import redis
@@ -234,6 +235,39 @@ class ETLScheduler:
             db.add(patient_record)
             db.flush()  # Flush to make the new record visible to subsequent queries
 
+        # Check if patient has valid ID card
+        has_valid_id = name_match_merger.has_valid_id_card(patient)
+
+        if not has_valid_id:
+            # Patient without valid ID card - use name match merging
+            logging_service.info(f"[patient_id={current_patient_id}] 无有效身份证，尝试姓名匹配合并")
+
+            decision, master_id, score = name_match_merger.decide_merge(db, patient, threshold)
+
+            if decision == 'NAME_MATCH_MERGE':
+                # Perform name match merge
+                logging_service.info(f"[patient_id={current_patient_id}] 姓名匹配合并成功! master_id={master_id}, 相似度={score:.2f}")
+
+                # Update patient record to merged status
+                patient_record.merged_to_master_id = master_id
+                patient_record.status = 'MERGED'
+
+                # Create merge log
+                self._save_merge_log(db, patient['patient_id'], master_id, score, 'NAME_MATCH')
+
+                stats['merged'] += 1
+
+                # Save process log and return early
+                self._save_process_log(db, patient['patient_id'], 'PROCESS', {
+                    'candidates_checked': 0,
+                    'merges': 1,
+                    'merge_type': 'NAME_MATCH'
+                })
+                stats['processed'] += 1
+                logging_service.info(f"[patient_id={current_patient_id}] 处理完成（姓名匹配）: 已处理={stats['processed']}, 已合并={stats['merged']}")
+                return
+
+        # Regular processing for patients with valid ID card
         candidates = inverted_index_service.search_candidates(db, patient, pinyin_gender)
         logging_service.info(f"[patient_id={current_patient_id}] 找到 {len(candidates)} 个候选匹配")
 
@@ -287,6 +321,23 @@ class ETLScheduler:
         stats['processed'] += 1
 
         logging_service.info(f"[patient_id={current_patient_id}] 处理完成: 已处理={stats['processed']}, 已合并={stats['merged']}, 待审核={stats['pending']}")
+
+    def _save_merge_log(self, db: Session, patient_id: str, master_id: int,
+                        score: float, merge_type: str):
+        """保存合并日志"""
+        from app.models import EmpiMergeLog
+
+        log = EmpiMergeLog(
+            patient_id_a=patient_id,
+            patient_id_b=None,  # Name match doesn't have a specific patient_id_b
+            master_id=master_id,
+            score=score,
+            merge_type=merge_type,
+            status='COMPLETED',
+            merged_at=datetime.now()
+        )
+        db.add(log)
+        db.commit()
 
     def _save_process_log(self, db: Session, patient_id: str, process_type: str, details: Dict):
         """保存处理日志并添加到Redis缓存"""
