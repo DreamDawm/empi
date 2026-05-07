@@ -10,6 +10,14 @@ import json
 from datetime import datetime
 
 class MergeDecisionEngine:
+    """合并决策引擎
+
+    决策类型：
+    - DIRECT_MERGE: 身份证+姓名完全相同，直接合并
+    - NAME_MATCH_MERGE: 无有效身份证，但姓名匹配且超过一半字段满分
+    - AUTO_MERGE: 相似度达到阈值，自动合并
+    - PENDING_REVIEW: 相似度未达阈值，进入待审核
+    """
     DIRECT_MERGE_SCORE = 100.0
 
     def __init__(self):
