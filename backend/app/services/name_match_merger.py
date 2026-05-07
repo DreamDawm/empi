@@ -1,5 +1,6 @@
 from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.models import EmpiMaster
 from app.services.cleaner import DataCleaner
 from app.services.similarity import similarity_calculator
@@ -122,10 +123,75 @@ class NameMatchMerger:
         # 必须严格超过一半（> 50%）
         return full_score_count > total_fields / 2
 
+    def _get_patient_data(self, db: Session, patient_id: str) -> Optional[Dict[str, Any]]:
+        """从 im_patient 表获取患者完整数据
+
+        Args:
+            db: 数据库会话
+            patient_id: 患者ID
+
+        Returns:
+            患者数据字典，如果不存在返回 None
+        """
+        query = text("SELECT * FROM im_patient WHERE patient_id = :patient_id LIMIT 1")
+        result = db.execute(query.params(patient_id=patient_id))
+        row = result.fetchone()
+        if row:
+            columns = result.keys()
+            return dict(zip(columns, row))
+        return None
+
     def decide_merge(self, db: Session, patient: Dict[str, Any],
                      threshold: float) -> Tuple[str, Optional[int], float]:
-        """决策是否可以基于姓名匹配合并"""
-        pass
+        """决策是否可以基于姓名匹配合并
+
+        流程：
+        1. 在 empi_master 中查找姓名相同的记录
+        2. 对每个匹配记录计算非身份证字段相似度
+        3. 如果超过一半字段满分，则认为可以合并
+
+        Args:
+            db: 数据库会话
+            patient: 待处理患者数据
+            threshold: 合并阈值（此场景下不直接使用，但保留参数）
+
+        Returns:
+            Tuple[str, Optional[int], float]:
+                - 决策类型: 'NAME_MATCH_MERGE' 或 'NO_MATCH'
+                - 主索引ID: 可合并时返回，否则 None
+                - 相似度分数
+        """
+        # 查找姓名匹配的记录
+        matches = self.find_by_name(db, patient)
+
+        if not matches:
+            return ('NO_MATCH', None, 0.0)
+
+        best_match = None
+        best_score = 0.0
+        best_master_id = None
+
+        for match_record in matches:
+            # 从 im_patient 表获取完整患者数据
+            candidate_data = self._get_patient_data(db, match_record.patient_id)
+
+            if not candidate_data:
+                continue
+
+            # 计算非身份证字段相似度
+            avg_score, field_scores = self.calculate_non_id_card_score(patient, candidate_data)
+
+            # 检查是否超过一半字段满分
+            if self.is_majority_full_score(field_scores):
+                if avg_score > best_score:
+                    best_score = avg_score
+                    best_match = match_record
+                    best_master_id = match_record.master_id
+
+        if best_match:
+            return ('NAME_MATCH_MERGE', best_master_id, best_score)
+
+        return ('NO_MATCH', None, 0.0)
 
 
 name_match_merger = NameMatchMerger()

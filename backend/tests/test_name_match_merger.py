@@ -299,3 +299,156 @@ class TestIsMajorityFullScore:
             'address': 0.0
         }
         assert self.merger.is_majority_full_score(field_scores) is True
+
+
+class TestDecideMerge:
+    """姓名匹配合并决策测试"""
+
+    def setup_method(self):
+        self.merger = NameMatchMerger()
+
+    def test_no_name_match_returns_none(self):
+        """找不到姓名匹配应返回 NO_MATCH"""
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+
+        patient = {
+            'patient_id': 'P001',
+            'person_name': '张三',
+            'birthday': '1990-01-01',
+            'gender': 'M'
+        }
+
+        decision, master_id, score = self.merger.decide_merge(mock_db, patient, 85.0)
+
+        assert decision == 'NO_MATCH'
+        assert master_id is None
+        assert score == 0.0
+
+    def test_majority_full_score_returns_name_match_merge(self):
+        """超过一半字段满分应返回 NAME_MATCH_MERGE"""
+        mock_db = MagicMock()
+        mock_record = MagicMock(spec=EmpiMaster)
+        mock_record.patient_id = 'P002'
+        mock_record.patient_name = '张三'
+        mock_record.master_id = 123456789
+        mock_record.status = 'NORMAL'
+        mock_record.inverted_index = {'pinyin_gender': 'zhangsan_M'}
+        mock_record.card_id = None
+
+        mock_db.query.return_value.filter.return_value.all.return_value = [mock_record]
+
+        # Mock im_patient query result
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = (
+            'P002',  # patient_id
+            '张三',   # patient_name (not person_name!)
+            '1990-01-01',  # birthday
+            'M',      # gender
+            '13800138000',  # phone
+            '北京市朝阳区'  # location
+        )
+        mock_result.keys.return_value = ['patient_id', 'patient_name', 'birthday', 'gender', 'phone', 'location']
+        mock_db.execute.return_value = mock_result
+
+        patient = {
+            'patient_id': 'P001',
+            'patient_name': '张三',
+            'birthday': '1990-01-01',
+            'gender': 'M',
+            'phone': '13800138000',
+            'location': '北京市朝阳区'
+        }
+
+        decision, master_id, score = self.merger.decide_merge(mock_db, patient, 85.0)
+
+        assert decision == 'NAME_MATCH_MERGE'
+        assert master_id == 123456789
+
+    def test_minority_full_score_returns_no_match(self):
+        """少于一半字段满分应返回 NO_MATCH"""
+        mock_db = MagicMock()
+        mock_record = MagicMock(spec=EmpiMaster)
+        mock_record.patient_id = 'P002'
+        mock_record.patient_name = '张三'
+        mock_record.master_id = 123456789
+        mock_record.status = 'NORMAL'
+        mock_record.inverted_index = {}
+        mock_record.card_id = None
+
+        mock_db.query.return_value.filter.return_value.all.return_value = [mock_record]
+
+        # Mock im_patient query result - only name matches, gender differs
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = (
+            'P002',  # patient_id
+            '张三',   # patient_name
+            '1990-01-01',  # birthday
+            'F',      # gender - different from patient
+            None,     # phone
+            None      # location
+        )
+        mock_result.keys.return_value = ['patient_id', 'patient_name', 'birthday', 'gender', 'phone', 'location']
+        mock_db.execute.return_value = mock_result
+
+        patient = {
+            'patient_id': 'P001',
+            'patient_name': '张三',
+            'birthday': '1990-01-01',
+            'gender': 'M',  # 性别不同
+            'phone': None,
+            'location': None
+        }
+
+        decision, master_id, score = self.merger.decide_merge(mock_db, patient, 85.0)
+
+        assert decision == 'NO_MATCH'
+
+    def test_multiple_matches_returns_best(self):
+        """多个匹配应返回最佳匹配"""
+        mock_db = MagicMock()
+
+        mock_record1 = MagicMock(spec=EmpiMaster)
+        mock_record1.patient_id = 'P002'
+        mock_record1.patient_name = '张三'
+        mock_record1.master_id = 111
+        mock_record1.status = 'NORMAL'
+        mock_record1.inverted_index = {}
+        mock_record1.card_id = None
+
+        mock_record2 = MagicMock(spec=EmpiMaster)
+        mock_record2.patient_id = 'P003'
+        mock_record2.patient_name = '张三'
+        mock_record2.master_id = 222
+        mock_record2.status = 'NORMAL'
+        mock_record2.inverted_index = {}
+        mock_record2.card_id = None
+
+        mock_db.query.return_value.filter.return_value.all.return_value = [mock_record1, mock_record2]
+
+        # Mock im_patient query result for both records
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = (
+            'P002',  # patient_id
+            '张三',   # patient_name
+            '1990-01-01',  # birthday
+            'M',      # gender
+            '13800138000',  # phone
+            '北京市朝阳区'  # location
+        )
+        mock_result.keys.return_value = ['patient_id', 'patient_name', 'birthday', 'gender', 'phone', 'location']
+        mock_db.execute.return_value = mock_result
+
+        patient = {
+            'patient_id': 'P001',
+            'patient_name': '张三',
+            'birthday': '1990-01-01',
+            'gender': 'M',
+            'phone': '13800138000',
+            'location': '北京市朝阳区'
+        }
+
+        decision, master_id, score = self.merger.decide_merge(mock_db, patient, 85.0)
+
+        assert decision == 'NAME_MATCH_MERGE'
+        assert master_id in [111, 222]
