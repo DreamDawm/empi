@@ -93,8 +93,9 @@ class SimilarityCalculator:
     def _similarity_name(self, patient_a: Dict[str, Any], patient_b: Dict[str, Any]) -> float:
         """姓名相似度：拼音完全匹配100，拼音编辑距离按比例"""
         from app.services.cleaner import DataCleaner
-        name_a = DataCleaner.get_pinyin(patient_a.get('patient_name', ''))
-        name_b = DataCleaner.get_pinyin(patient_b.get('patient_name', ''))
+        # 支持 person_name 和 patient_name 两种字段名
+        name_a = DataCleaner.get_pinyin(patient_a.get('person_name', '') or patient_a.get('patient_name', ''))
+        name_b = DataCleaner.get_pinyin(patient_b.get('person_name', '') or patient_b.get('patient_name', ''))
         if not name_a or not name_b:
             return 0.0
         if name_a == name_b:
@@ -163,8 +164,9 @@ class SimilarityCalculator:
     def _similarity_gender(self, patient_a: Dict[str, Any], patient_b: Dict[str, Any]) -> float:
         """性别相似度：完全匹配100，不匹配0"""
         from app.services.cleaner import DataCleaner
-        gender_a = DataCleaner.clean_gender(patient_a.get('gender', ''))
-        gender_b = DataCleaner.clean_gender(patient_b.get('gender', ''))
+        # 支持 gender 和 gender_source_value 两种字段名
+        gender_a = DataCleaner.clean_gender(patient_a.get('gender', '') or patient_a.get('gender_source_value', ''))
+        gender_b = DataCleaner.clean_gender(patient_b.get('gender', '') or patient_b.get('gender_source_value', ''))
         if not gender_a or not gender_b:
             return 0.0
         return 100.0 if gender_a == gender_b else 0.0

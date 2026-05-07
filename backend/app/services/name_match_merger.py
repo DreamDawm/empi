@@ -20,7 +20,7 @@ class NameMatchMerger:
         cleaned = self.data_cleaner.clean_id_card(id_card)
         return cleaned is not None
 
-    def find_by_name(self, db: Session, patient: Dict[str, Any]) -> List[EmpiMaster]:
+    def find_by_name(self, db: Session, patient: Dict[str, Any]) -> List[Dict[str, Any]]:
         """根据姓名（汉字和拼音）在 empi_master 中查找匹配记录
 
         搜索策略：
@@ -33,43 +33,52 @@ class NameMatchMerger:
             patient: 患者信息字典
 
         Returns:
-            匹配的 EmpiMaster 记录列表（排除自己，只包含 NORMAL 状态）
+            匹配的患者数据列表（从 im_patient 表获取完整数据）
         """
         name = patient.get('person_name') or patient.get('patient_name')
         if not name:
             return []
 
-        cleaned_name = self.data_cleaner.clean_name(name)
         pinyin_name = self.data_cleaner.get_pinyin(name)
         patient_id = patient.get('patient_id')
 
         results = []
         seen_ids = set()
 
-        # 1. 按汉字姓名精确匹配
-        chinese_matches = db.query(EmpiMaster).filter(
-            EmpiMaster.status == 'NORMAL',
-            EmpiMaster.patient_id != patient_id,
-            EmpiMaster.patient_name == cleaned_name
-        ).all()
+        # 1. 按汉字姓名精确匹配 - 从 im_patient 表查询
+        query = text("""
+            SELECT ip.* FROM im_patient ip
+            INNER JOIN empi_master em ON ip.patient_id = em.patient_id
+            WHERE ip.person_name = :name
+            AND ip.patient_id != :patient_id
+        """)
+        chinese_matches = db.execute(query.params(name=name, patient_id=patient_id))
 
-        for record in chinese_matches:
-            if record.patient_id not in seen_ids:
-                seen_ids.add(record.patient_id)
+        for row in chinese_matches:
+            columns = chinese_matches.keys()
+            record = dict(zip(columns, row))
+            if record['patient_id'] not in seen_ids:
+                seen_ids.add(record['patient_id'])
                 results.append(record)
 
-        # 2. 按拼音姓名匹配（通过 inverted_index 的 pinyin_gender 字段）
+        # 2. 按拼音姓名匹配
         if pinyin_name:
-            # 从 pinyin_gender_index 中提取拼音前缀
-            pinyin_matches = db.query(EmpiMaster).filter(
-                EmpiMaster.status == 'NORMAL',
-                EmpiMaster.patient_id != patient_id,
-                EmpiMaster.pinyin_gender_index.like(f"{pinyin_name}_%")
-            ).all()
+            query = text("""
+                SELECT ip.* FROM im_patient ip
+                INNER JOIN empi_master em ON ip.patient_id = em.patient_id
+                WHERE em.pinyin_gender_index LIKE :pinyin_pattern
+                AND ip.patient_id != :patient_id
+            """)
+            pinyin_matches = db.execute(query.params(
+                pinyin_pattern=f"{pinyin_name}_%",
+                patient_id=patient_id
+            ))
 
-            for record in pinyin_matches:
-                if record.patient_id not in seen_ids:
-                    seen_ids.add(record.patient_id)
+            for row in pinyin_matches:
+                columns = pinyin_matches.keys()
+                record = dict(zip(columns, row))
+                if record['patient_id'] not in seen_ids:
+                    seen_ids.add(record['patient_id'])
                     results.append(record)
 
         return results
@@ -161,23 +170,18 @@ class NameMatchMerger:
                 - 主索引ID: 可合并时返回，否则 None
                 - 相似度分数
         """
-        # 查找姓名匹配的记录
+        # 查找姓名匹配的记录（返回的是患者数据字典列表）
         matches = self.find_by_name(db, patient)
 
         if not matches:
             return ('NO_MATCH', None, 0.0)
 
-        best_match = None
+        best_match_patient_id = None
         best_score = 0.0
         best_master_id = None
 
-        for match_record in matches:
-            # 从 im_patient 表获取完整患者数据
-            candidate_data = self._get_patient_data(db, match_record.patient_id)
-
-            if not candidate_data:
-                continue
-
+        for candidate_data in matches:
+            # candidate_data 已经是完整的患者数据字典
             # 计算非身份证字段相似度
             avg_score, field_scores = self.calculate_non_id_card_score(patient, candidate_data)
 
@@ -185,10 +189,15 @@ class NameMatchMerger:
             if self.is_majority_full_score(field_scores):
                 if avg_score > best_score:
                     best_score = avg_score
-                    best_match = match_record
-                    best_master_id = match_record.master_id
+                    best_match_patient_id = candidate_data['patient_id']
+                    # 从 empi_master 获取 master_id
+                    master_record = db.query(EmpiMaster).filter(
+                        EmpiMaster.patient_id == candidate_data['patient_id']
+                    ).first()
+                    if master_record:
+                        best_master_id = master_record.merged_to_master_id or master_record.master_id
 
-        if best_match:
+        if best_match_patient_id:
             return ('NAME_MATCH_MERGE', best_master_id, best_score)
 
         return ('NO_MATCH', None, 0.0)
