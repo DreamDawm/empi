@@ -229,6 +229,43 @@ class SimilarityCalculator:
         sorted_ids = sorted([p1, p2])
         return f"similarity:{sorted_ids[0]}:{sorted_ids[1]}"
 
+    def calculate_with_details(self, patient_a: Dict[str, Any], patient_b: Dict[str, Any],
+                               weights: Any) -> tuple:
+        """计算相似度并同时返回各字段明细，避免双重计算"""
+        cache_key = self._get_cache_key(patient_a, patient_b)
+        cached = self.redis_client.get(cache_key)
+        if cached:
+            field_details = self.get_field_details(patient_a, patient_b)
+            return float(cached), field_details
+
+        field_details = {}
+        scores = {}
+        total_weight = 0
+
+        if isinstance(weights, list):
+            for item in weights:
+                field_name = item.get('field_name', '')
+                weight = item.get('weight', 0)
+                if weight <= 0:
+                    continue
+                total_weight += weight
+                score = self._calculate_field_similarity(item, patient_a, patient_b)
+                scores[field_name] = score * weight
+                field_details[field_name] = score
+        elif isinstance(weights, dict):
+            for field, weight in weights.items():
+                if weight <= 0:
+                    continue
+                total_weight += weight
+                score = self._calculate_field_similarity(field, patient_a, patient_b)
+                scores[field] = score * weight
+                field_details[field] = score
+
+        final_score = sum(scores.values()) / total_weight if total_weight else 0
+        self.redis_client.setex(cache_key, 3600, str(final_score))
+
+        return final_score, field_details
+
     def get_field_details(self, patient_a: Dict[str, Any], patient_b: Dict[str, Any]) -> Dict[str, float]:
         """获取各字段相似度明细"""
         fields = ['identity_card', 'name', 'birthday', 'gender', 'phone', 'address']

@@ -69,8 +69,7 @@ class MergeDecisionEngine:
             return ('DIRECT_MERGE', self.DIRECT_MERGE_SCORE)
 
         # 不满足直接合并条件，进行相似度评分
-        score = similarity_calculator.calculate(patient_a, patient_b, weights)
-        field_details = similarity_calculator.get_field_details(patient_a, patient_b)
+        score, field_details = similarity_calculator.calculate_with_details(patient_a, patient_b, weights)
 
         if score >= threshold:
             return ('AUTO_MERGE', score)
@@ -98,7 +97,7 @@ class MergeDecisionEngine:
             status='PENDING'
         )
         db.add(pending)
-        db.commit()
+        db.flush()
 
     def auto_merge(self, db: Session, patient_a: Dict[str, Any], patient_b: Dict[str, Any],
                    score: float, merge_type: str = 'AUTO') -> int:
@@ -111,6 +110,15 @@ class MergeDecisionEngine:
         ).first()
 
         if existing_log:
+            # 即使已有合并日志，仍需确保当前患者记录状态正确
+            record_a = db.query(EmpiMaster).filter(
+                EmpiMaster.patient_id == patient_a['patient_id']
+            ).first()
+            if record_a and record_a.status != 'MERGED':
+                record_a.status = 'MERGED'
+                record_a.merged_to_master_id = existing_log.master_id
+                record_a.updated_at = datetime.now()
+                db.flush()
             return existing_log.master_id
 
         # 查询两个患者的 empi_master 记录
@@ -173,7 +181,7 @@ class MergeDecisionEngine:
             merge_time=datetime.now()
         )
         db.add(merge_log)
-        db.commit()
+        db.flush()
 
         return master_id
 

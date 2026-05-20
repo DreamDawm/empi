@@ -1,7 +1,10 @@
 from typing import Dict, Any, Optional, List
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.models import EmpiMaster, EmpiProcessLog, EmpiConfig
+from app.models.base import SessionLocal
 from app.core.snowflake import get_snowflake_generator
 from app.services.cleaner import DataCleaner
 from app.services.inverted_index import inverted_index_service
@@ -55,29 +58,69 @@ class ETLScheduler:
 
         stats = {'processed': 0, 'merged': 0, 'pending': 0}
 
-        for i, patient in enumerate(patients):
-            # Idempotency check: skip patients already processed in previous batches
-            # Note: This checks EmpiProcessLog (tracking processed patients), not EmpiMaster.
-            # New EmpiMaster records created in this batch are committed per-patient inside
-            # _process_patient(), making them visible to subsequent search_candidates() calls.
-            if self._is_processed(db, patient['patient_id']):
-                continue
+        groups = self._group_patients_by_pinyin(patients)
+        max_workers = min(8, len(groups))
 
-            self._process_patient(db, patient, weights, threshold, stats)
+        logging_service.info(f"分为 {len(groups)} 组，使用 {max_workers} 个工作线程")
 
-            # Batch commit every BATCH_COMMIT_SIZE records
-            if (i + 1) % BATCH_COMMIT_SIZE == 0:
-                db.commit()
-                logging_service.info(f"已处理 {i + 1} 条记录，执行批量提交")
+        if max_workers <= 1:
+            # 只有一组或空，退化为串行处理
+            for patient in patients:
+                if self._is_processed(db, patient['patient_id']):
+                    continue
+                self._process_patient(db, patient, weights, threshold, stats)
+            db.commit()
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(self._process_group, group, weights, threshold): key
+                    for key, group in groups.items()
+                }
+                for future in as_completed(futures):
+                    group_key = futures[future]
+                    try:
+                        group_stats = future.result()
+                        stats['processed'] += group_stats['processed']
+                        stats['merged'] += group_stats['merged']
+                        stats['pending'] += group_stats['pending']
+                    except Exception as e:
+                        logging_service.error(f"分组 {group_key} 处理异常: {e}")
 
         # Commit any remaining records at the end
-        db.commit()
+        logging_service.info(f"[批次完成] 处理={stats['processed']}, 合并={stats['merged']}, 待审核={stats['pending']}")
 
         # 使用自增 id 作为游标，确保不遗漏任何数据
         self._set_last_id(patients[-1]['id'])
 
         logging_service.info(f"本轮处理完成: {stats}")
 
+        return stats
+
+    def _group_patients_by_pinyin(self, patients: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+        """按 pinyin_gender 分组，同组内串行处理避免冲突"""
+        groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for patient in patients:
+            index = inverted_index_service.build_index(patient)
+            key = index.get('pinyin_gender', '') or 'unknown'
+            patient['_prebuilt_index'] = index
+            groups[key].append(patient)
+        return dict(groups)
+
+    def _process_group(self, group_patients: List[Dict[str, Any]], weights: Dict[str, float], threshold: float) -> Dict[str, int]:
+        """在独立 Session 中处理一组患者"""
+        db = SessionLocal()
+        stats = {'processed': 0, 'merged': 0, 'pending': 0}
+        try:
+            for patient in group_patients:
+                if self._is_processed(db, patient['patient_id']):
+                    continue
+                self._process_patient(db, patient, weights, threshold, stats)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logging_service.error(f"分组处理失败: {e}")
+        finally:
+            db.close()
         return stats
 
     def _get_last_id(self) -> Optional[int]:
@@ -202,16 +245,16 @@ class ETLScheduler:
         current_patient_id = patient['patient_id']
         current_patient_name = patient.get('person_name', '')
         current_patient_gender = patient.get('gender', '')
-        logging_service.info(f"[patient_id={current_patient_id}] 开始处理: 姓名={current_patient_name}, 性别={current_patient_gender}")
+        logging_service.debug(f"[patient_id={current_patient_id}] 开始处理: 姓名={current_patient_name}, 性别={current_patient_gender}")
 
-        inverted_index = inverted_index_service.build_index(patient)
+        inverted_index = patient.get('_prebuilt_index') or inverted_index_service.build_index(patient)
 
         # 提取索引字段值
         pinyin_gender = inverted_index.get('pinyin_gender', '')
         birth_year_gender = inverted_index.get('birth_year_gender', '')
         id_card_prefix = inverted_index.get('id_card_prefix', '')
 
-        logging_service.info(f"[patient_id={current_patient_id}] 索引字段: pinyin_gender={pinyin_gender}, birth_year_gender={birth_year_gender}, id_card_prefix={id_card_prefix}")
+        logging_service.debug(f"[patient_id={current_patient_id}] 索引字段: pinyin_gender={pinyin_gender}, birth_year_gender={birth_year_gender}, id_card_prefix={id_card_prefix}")
 
         patient_record = db.query(EmpiMaster).filter(
             EmpiMaster.patient_id == patient['patient_id']
@@ -240,13 +283,13 @@ class ETLScheduler:
 
         if not has_valid_id:
             # Patient without valid ID card - use name match merging
-            logging_service.info(f"[patient_id={current_patient_id}] 无有效身份证，尝试姓名匹配合并")
+            logging_service.debug(f"[patient_id={current_patient_id}] 无有效身份证，尝试姓名匹配合并")
 
             decision, master_id, score = name_match_merger.decide_merge(db, patient, threshold)
 
             if decision == 'NAME_MATCH_MERGE':
                 # Perform name match merge
-                logging_service.info(f"[patient_id={current_patient_id}] 姓名匹配合并成功! master_id={master_id}, 相似度={score:.2f}")
+                logging_service.debug(f"[patient_id={current_patient_id}] 姓名匹配合并成功! master_id={master_id}, 相似度={score:.2f}")
 
                 # Update patient record to merged status
                 patient_record.merged_to_master_id = master_id
@@ -264,31 +307,24 @@ class ETLScheduler:
                     'merge_type': 'NAME_MATCH'
                 })
                 stats['processed'] += 1
-                logging_service.info(f"[patient_id={current_patient_id}] 处理完成（姓名匹配）: 已处理={stats['processed']}, 已合并={stats['merged']}")
+                logging_service.debug(f"[patient_id={current_patient_id}] 处理完成（姓名匹配）: 已处理={stats['processed']}, 已合并={stats['merged']}")
                 return
 
         # Regular processing for patients with valid ID card
-        candidates = inverted_index_service.search_candidates(db, patient, pinyin_gender)
-        logging_service.info(f"[patient_id={current_patient_id}] 找到 {len(candidates)} 个候选匹配")
+        candidates = inverted_index_service.search_candidates(db, patient, pinyin_gender, prebuilt_index=inverted_index)
+        logging_service.debug(f"[patient_id={current_patient_id}] 找到 {len(candidates)} 个候选匹配")
 
         for candidate in candidates:
             if candidate['patient_id'] == patient['patient_id']:
                 continue
 
-            candidate_patient = db.query(EmpiMaster).filter(
-                EmpiMaster.patient_id == candidate['patient_id']
-            ).first()
-
-            if not candidate_patient:
-                continue
-
             candidate_data = {
-                'patient_id': candidate_patient.patient_id,
-                'person_name': candidate_patient.patient_name,
-                'gender': candidate_patient.inverted_index.get('pinyin_gender', '').split('_')[-1] if candidate_patient.inverted_index else '',
-                'birthday': candidate_patient.inverted_index.get('birth_year_gender', '').split('_')[0] if candidate_patient.inverted_index else None,
-                'card_id': candidate_patient.card_id,
-                'identity_card_num': candidate_patient.card_id,
+                'patient_id': candidate['patient_id'],
+                'person_name': candidate['patient_name'],
+                'gender': candidate['inverted_index'].get('pinyin_gender', '').split('_')[-1] if candidate.get('inverted_index') else '',
+                'birthday': candidate['inverted_index'].get('birth_year_gender', '').split('_')[0] if candidate.get('inverted_index') else None,
+                'card_id': candidate.get('card_id'),
+                'identity_card_num': candidate.get('card_id'),
                 'phone': None,
                 'location': None,
             }
@@ -297,20 +333,20 @@ class ETLScheduler:
                 db, patient, candidate_data, weights, threshold
             )
 
-            logging_service.info(f"[patient_id={current_patient_id}] vs [candidate_id={candidate_patient.patient_id}] 相似度评分: {score:.2f}, 决策: {decision}")
+            logging_service.debug(f"[patient_id={current_patient_id}] vs [candidate_id={candidate['patient_id']}] 相似度评分: {score:.2f}, 决策: {decision}")
 
             if decision == 'DIRECT_MERGE':
                 # 直接合并（身份证+姓名相同）
                 master_id = decision_engine.auto_merge(db, patient, candidate_data, score, 'DIRECT')
                 stats['merged'] += 1
-                logging_service.info(f"[patient_id={current_patient_id}] 直接合并成功（身份证+姓名相同）! master_id={master_id}, 累计合并数: {stats['merged']}")
+                logging_service.debug(f"[patient_id={current_patient_id}] 直接合并成功（身份证+姓名相同）! master_id={master_id}, 累计合并数: {stats['merged']}")
             elif decision == 'AUTO_MERGE':
                 master_id = decision_engine.auto_merge(db, patient, candidate_data, score, 'AUTO')
                 stats['merged'] += 1
-                logging_service.info(f"[patient_id={current_patient_id}] 自动合并成功! master_id={master_id}, 累计合并数: {stats['merged']}")
+                logging_service.debug(f"[patient_id={current_patient_id}] 自动合并成功! master_id={master_id}, 累计合并数: {stats['merged']}")
             else:
                 stats['pending'] += 1
-                logging_service.info(f"[patient_id={current_patient_id}] 进入待审核, 累计待审核数: {stats['pending']}")
+                logging_service.debug(f"[patient_id={current_patient_id}] 进入待审核, 累计待审核数: {stats['pending']}")
 
         # Save process log once per patient (not per candidate) for idempotency tracking
         self._save_process_log(db, patient['patient_id'], 'PROCESS', {
@@ -320,7 +356,7 @@ class ETLScheduler:
 
         stats['processed'] += 1
 
-        logging_service.info(f"[patient_id={current_patient_id}] 处理完成: 已处理={stats['processed']}, 已合并={stats['merged']}, 待审核={stats['pending']}")
+        logging_service.debug(f"[patient_id={current_patient_id}] 处理完成: 已处理={stats['processed']}, 已合并={stats['merged']}, 待审核={stats['pending']}")
 
     def _save_merge_log(self, db: Session, patient_id: str, master_id: int,
                         score: float, merge_type: str):
@@ -340,7 +376,7 @@ class ETLScheduler:
             merge_time=datetime.now()
         )
         db.add(log)
-        db.commit()
+        db.flush()
 
     def _save_process_log(self, db: Session, patient_id: str, process_type: str, details: Dict):
         """保存处理日志并添加到Redis缓存"""
@@ -361,6 +397,6 @@ class ETLScheduler:
             process_time=datetime.now()
         )
         db.add(log)
-        db.commit()
+        db.flush()
 
 etl_scheduler = ETLScheduler()

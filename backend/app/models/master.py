@@ -27,4 +27,6 @@ class EmpiMaster(Base):
         Index('idx_pinyin_gender', 'pinyin_gender_index'),
         Index('idx_birth_year_gender', 'birth_year_gender_index'),
         Index('idx_id_card_prefix', 'id_card_prefix_index'),
+        Index('idx_pinyin_birth_composite', 'pinyin_gender_index', 'birth_year_gender_index'),
+        Index('idx_status_pinyin', 'status', 'pinyin_gender_index'),
     )

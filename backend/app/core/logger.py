@@ -33,6 +33,9 @@ def setup_logger(name: str) -> logging.Logger:
 
     console = logging.StreamHandler()
     console.setFormatter(formatter)
+    # 设置控制台输出编码为UTF-8
+    if hasattr(console.stream, 'reconfigure'):
+        console.stream.reconfigure(encoding='utf-8')
     logger.addHandler(console)
 
     return logger

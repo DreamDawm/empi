@@ -45,6 +45,9 @@ class ETLLoggingService:
         log_func = getattr(logger, level.lower(), logger.info)
         log_func(f"[{patient_id}] {message}" if patient_id else message)
 
+    def debug(self, message: str, patient_id: Optional[str] = None):
+        self.log('DEBUG', message, patient_id)
+
     def info(self, message: str, patient_id: Optional[str] = None):
         self.log('INFO', message, patient_id)
 

@@ -1,7 +1,6 @@
 from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from app.models import EmpiMaster
 from app.services.cleaner import DataCleaner
 from app.services.similarity import similarity_calculator
 
@@ -47,7 +46,8 @@ class NameMatchMerger:
 
         # 1. 按汉字姓名精确匹配 - 从 im_patient 表查询
         query = text("""
-            SELECT ip.* FROM im_patient ip
+            SELECT ip.*, em.master_id as _master_id, em.merged_to_master_id as _merged_to
+            FROM im_patient ip
             INNER JOIN empi_master em ON ip.patient_id = em.patient_id
             WHERE ip.person_name = :name
             AND ip.patient_id != :patient_id
@@ -61,10 +61,14 @@ class NameMatchMerger:
                 seen_ids.add(record['patient_id'])
                 results.append(record)
 
+        if results:
+            return results
+
         # 2. 按拼音姓名匹配
         if pinyin_name:
             query = text("""
-                SELECT ip.* FROM im_patient ip
+                SELECT ip.*, em.master_id as _master_id, em.merged_to_master_id as _merged_to
+                FROM im_patient ip
                 INNER JOIN empi_master em ON ip.patient_id = em.patient_id
                 WHERE em.pinyin_gender_index LIKE :pinyin_pattern
                 AND ip.patient_id != :patient_id
@@ -181,7 +185,7 @@ class NameMatchMerger:
         best_master_id = None
 
         for candidate_data in matches:
-            # candidate_data 已经是完整的患者数据字典
+            # candidate_data 已经是完整的患者数据字典（含 _master_id, _merged_to）
             # 计算非身份证字段相似度
             avg_score, field_scores = self.calculate_non_id_card_score(patient, candidate_data)
 
@@ -190,12 +194,7 @@ class NameMatchMerger:
                 if avg_score > best_score:
                     best_score = avg_score
                     best_match_patient_id = candidate_data['patient_id']
-                    # 从 empi_master 获取 master_id
-                    master_record = db.query(EmpiMaster).filter(
-                        EmpiMaster.patient_id == candidate_data['patient_id']
-                    ).first()
-                    if master_record:
-                        best_master_id = master_record.merged_to_master_id or master_record.master_id
+                    best_master_id = candidate_data.get('_merged_to') or candidate_data.get('_master_id')
 
         if best_match_patient_id:
             return ('NAME_MATCH_MERGE', best_master_id, best_score)

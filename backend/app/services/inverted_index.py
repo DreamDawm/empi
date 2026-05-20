@@ -13,9 +13,9 @@ class InvertedIndexService:
         """为患者构建倒排索引"""
         return self.data_cleaner.build_inverted_index(patient)
 
-    def search_candidates(self, db: Session, patient: Dict[str, Any], pinyin_gender: str) -> List[Dict[str, Any]]:
+    def search_candidates(self, db: Session, patient: Dict[str, Any], pinyin_gender: str, prebuilt_index: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         """搜索候选匹配患者 - 使用数据库索引快速检索"""
-        index = self.build_index(patient)
+        index = prebuilt_index if prebuilt_index else self.build_index(patient)
         candidates = []
 
         if not pinyin_gender:
@@ -33,6 +33,7 @@ class InvertedIndexService:
                 'patient_id': record.patient_id,
                 'patient_name': record.patient_name,
                 'master_id': record.master_id,
+                'card_id': record.card_id,
                 'inverted_index': record.inverted_index
             })
 
@@ -57,6 +58,7 @@ class InvertedIndexService:
                         'patient_id': record.patient_id,
                         'patient_name': record.patient_name,
                         'master_id': record.master_id,
+                        'card_id': record.card_id,
                         'inverted_index': record.inverted_index
                     })
 
@@ -73,6 +75,7 @@ class InvertedIndexService:
                         'patient_id': record.patient_id,
                         'patient_name': record.patient_name,
                         'master_id': record.master_id,
+                        'card_id': record.card_id,
                         'inverted_index': record.inverted_index
                     })
 
